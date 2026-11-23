@@ -232,8 +232,8 @@ The suite covers:
 
 ```
 PASS · full journey
-  brief lit=6280 · detail lit=5644 · draft lit=3564 · sent lit=3449
-  pair code=605528 · screenshots in docs/
+  brief lit=6280 · detail lit=5644 · draft lit=3467 · sent lit=3449
+  pair code issued · screenshots in docs/
 ```
 
 It also regenerates `docs/*.png` from the real framebuffer.

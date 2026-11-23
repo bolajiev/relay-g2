@@ -134,9 +134,9 @@ export class RelayApi {
     }
   }
 
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async request<T>(path: string, init: RequestInit = {}, timeoutMs = 12_000): Promise<T> {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 12_000)
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (this.token) headers.Authorization = `Bearer ${this.token}`
@@ -164,7 +164,7 @@ export class RelayApi {
     if (location.search.includes('fresh=1')) this.clearToken()
     if (this.token) {
       try {
-        const inbox = await this.request<Inbox>('/api/inbox')
+        const inbox = await this.request<Inbox>('/api/inbox', {}, 6_000)
         this.demo = inbox.demo
         this.offline = false
         return inbox
@@ -180,9 +180,11 @@ export class RelayApi {
     }
 
     try {
-      const res = await this.request<{ token: string; inbox: Inbox; features: Features; account: { kind: string } }>('/api/session/demo', {
-        method: 'POST',
-      })
+      const res = await this.request<{ token: string; inbox: Inbox; features: Features; account: { kind: string } }>(
+        '/api/session/demo',
+        { method: 'POST' },
+        6_000,
+      )
       this.setToken(res.token)
       this.demo = res.account.kind === 'demo'
       if (res.features) this.features = res.features
@@ -196,7 +198,7 @@ export class RelayApi {
 
   async inbox(): Promise<Inbox> {
     if (this.offline) return this.localStore().inbox()
-    const inbox = await this.request<Inbox>('/api/inbox')
+    const inbox = await this.request<Inbox>('/api/inbox', {}, 6_000)
     this.demo = inbox.demo
     return inbox
   }
@@ -207,7 +209,7 @@ export class RelayApi {
       if (!detail) throw new ApiError(404, 'loop_not_found')
       return detail
     }
-    return this.request(`/api/loop/${encodeURIComponent(threadId)}`)
+    return this.request(`/api/loop/${encodeURIComponent(threadId)}`, {}, 6_000)
   }
 
   async draft(threadId: string, intent?: string): Promise<DraftResult> {
@@ -215,7 +217,7 @@ export class RelayApi {
     return this.request(`/api/loop/${encodeURIComponent(threadId)}/draft`, {
       method: 'POST',
       body: JSON.stringify({ intent }),
-    })
+    }, 15_000)
   }
 
   async send(threadId: string, text: string): Promise<{ ok: boolean; remaining: number; via: string }> {
@@ -226,7 +228,7 @@ export class RelayApi {
     return this.request(`/api/loop/${encodeURIComponent(threadId)}/send`, {
       method: 'POST',
       body: JSON.stringify({ text }),
-    })
+    }, 15_000)
   }
 
   async snooze(threadId: string, minutes: number): Promise<Inbox> {
@@ -243,7 +245,7 @@ export class RelayApi {
 
   async digest(): Promise<DigestItem[]> {
     if (this.offline) return this.localStore().digest()
-    const res = await this.request<{ items: DigestItem[] }>('/api/digest')
+    const res = await this.request<{ items: DigestItem[] }>('/api/digest', {}, 6_000)
     return res.items
   }
 
@@ -252,7 +254,7 @@ export class RelayApi {
     return this.request('/api/transcribe', {
       method: 'POST',
       body: JSON.stringify({ pcm: pcmBase64, sampleRate: 16_000 }),
-    })
+    }, 30_000)
   }
 
   async transcribeDemo(utterance: string): Promise<{ text: string; provider: string }> {
@@ -260,22 +262,22 @@ export class RelayApi {
     return this.request('/api/transcribe', {
       method: 'POST',
       body: JSON.stringify({ demoUtterance: utterance }),
-    })
+    }, 8_000)
   }
 
   async pairNew(): Promise<PairInfo> {
     if (this.offline) throw new ApiError(0, 'offline', 'Pairing needs the Relay server.')
-    return this.request('/api/pair/new', { method: 'POST' })
+    return this.request('/api/pair/new', { method: 'POST' }, 6_000)
   }
 
   async pairStatus(code: string): Promise<{ status: 'waiting' | 'connected'; expiresAt: number }> {
     if (this.offline) throw new ApiError(0, 'offline')
-    return this.request(`/api/pair/${encodeURIComponent(code)}`)
+    return this.request(`/api/pair/${encodeURIComponent(code)}`, {}, 6_000)
   }
 
   async resetDemo(): Promise<Inbox> {
     if (this.offline) return this.localStore().inbox()
-    const res = await this.request<{ inbox: Inbox }>('/api/demo/reset', { method: 'POST' })
+    const res = await this.request<{ inbox: Inbox }>('/api/demo/reset', { method: 'POST' }, 6_000)
     return res.inbox
   }
 }
