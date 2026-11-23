@@ -2,6 +2,8 @@
 
 **Telegram, reduced to the few people actually waiting on you — read at a glance, answered by voice, sent with one tap on Even G2.**
 
+[![CI](https://github.com/bolajiev/relay-g2/actions/workflows/ci.yml/badge.svg)](https://github.com/bolajiev/relay-g2/actions/workflows/ci.yml)
+
 [Watch the 46-second demo](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4) · [Pairing page screenshot](docs/pair-page.png) · [Packaged build](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay.ehpk) · [Source](https://github.com/bolajiev/relay-g2)
 
 <img src="docs/relay-demo-poster.png" alt="Relay drafting a reply on Even G2" width="900">
