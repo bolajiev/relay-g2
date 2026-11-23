@@ -417,7 +417,7 @@ function listeningSourceOf(eventSource: number | undefined): 'glasses' | 'ring' 
   return 'glasses'
 }
 
-async function handleTap(source?: number): Promise<void> {
+async function handleTap(): Promise<void> {
   if (!ready) return
   if (Date.now() < suppressClickUntil) return
   switch (state.screen) {
@@ -452,7 +452,6 @@ async function handleTap(source?: number): Promise<void> {
     default:
       break
   }
-  void source
 }
 
 async function handleDouble(): Promise<void> {
@@ -570,7 +569,7 @@ bridge.onEvenHubEvent(event => {
     }
     if (type === OsEventTypeList.CLICK_EVENT) {
       if (Date.now() - lastLongPressAt < 700) return
-      void handleTap(sys.eventSource)
+      void handleTap()
       return
     }
     if (type === OsEventTypeList.SYSTEM_EXIT_EVENT || type === OsEventTypeList.ABNORMAL_EXIT_EVENT) {

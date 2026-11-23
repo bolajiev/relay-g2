@@ -1,6 +1,4 @@
 import crypto from 'node:crypto'
-import path from 'node:path'
-import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import type { Config } from '../config'
 import { ServiceError } from '../errors'
@@ -312,18 +310,12 @@ export class TelegramService {
     return { threads, messages, styleSamples: style.slice(-12) }
   }
 
-  private async clientFor(accountId: string, sessionEnc: string): Promise<AnyClient> {
+  private async clientFor(accountId: string, sessionPlain: string): Promise<AnyClient> {
     const cached = this.clients.get(accountId)
     if (cached) return cached
-    const session = this.decryptSession(sessionEnc)
-    const client = await this.newClient(session)
+    const client = await this.newClient(sessionPlain)
     this.clients.set(accountId, client)
     return client
-  }
-
-  private decryptSession(sessionEnc: string): string {
-    // The service only needs the plaintext session; decryption stays in the route layer.
-    return sessionEnc
   }
 
   async send(accountId: string, sessionPlain: string, peer: string, text: string): Promise<void> {
@@ -357,7 +349,3 @@ export class TelegramService {
     }
   }
 }
-
-/** Keep TypeScript honest about unused imports in this adapter file. */
-void path
-void fs
