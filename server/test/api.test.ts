@@ -1,0 +1,261 @@
+import assert from 'node:assert/strict'
+import { once } from 'node:events'
+import type { Server } from 'node:http'
+import test from 'node:test'
+import { createApp } from '../src/app'
+import { loadConfig } from '../src/config'
+import { Store } from '../src/store'
+
+async function boot() {
+  const config = loadConfig({
+    ...process.env,
+    DEMO_ENABLED: 'true',
+    DEMO_VOICE: 'true',
+    SESSION_KEY: '00'.repeat(32),
+    TG_API_ID: '',
+    TG_API_HASH: '',
+    LLM_API_KEY: '',
+    OPENAI_API_KEY: '',
+    WHISPER_BIN: '',
+    CORS_ORIGIN: '*',
+  })
+  const store = new Store('/tmp/relay-test-db.json', { memory: true })
+  const app = createApp({ store, config })
+  const server: Server = app.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('no port')
+  const base = `http://127.0.0.1:${address.port}`
+  return { server, base, store, config }
+}
+
+async function call(base: string, path: string, init: RequestInit = {}) {
+  const res = await fetch(`${base}${path}`, init)
+  const text = await res.text()
+  let json: any = null
+  try {
+    json = JSON.parse(text)
+  } catch {
+    json = text
+  }
+  return { status: res.status, json, headers: res.headers }
+}
+
+test('demo session → inbox → draft → send → inbox shrinks', async t => {
+  const { server, base } = await boot()
+  t.after(() => server.close())
+
+  const health = await call(base, '/health')
+  assert.equal(health.status, 200)
+  assert.equal(health.json.ok, true)
+  assert.equal(health.json.features.demo, true)
+
+  const session = await call(base, '/api/session/demo', { method: 'POST' })
+  assert.equal(session.status, 201)
+  const token = session.json.token
+  assert.match(token, /^rl_/)
+  assert.equal(session.json.inbox.loops.length, 5)
+  assert.equal(session.json.inbox.loops[0].who, 'Ana Ruiz')
+
+  const auth = { Authorization: `Bearer ${token}` }
+
+  const inbox = await call(base, '/api/inbox', { headers: auth })
+  assert.equal(inbox.status, 200)
+  assert.equal(inbox.json.loops.length, 5)
+  assert.equal(inbox.json.channels, 2)
+  assert.equal(inbox.json.demo, true)
+  assert.equal(inbox.json.connected, false)
+  assert.equal(inbox.headers.get('access-control-allow-origin'), '*')
+
+  const ana = inbox.json.loops.find((l: any) => l.who === 'Ana Ruiz')
+  assert.ok(ana, 'Ana loop exists')
+  const detail = await call(base, `/api/loop/${ana.threadId}`, { headers: auth })
+  assert.equal(detail.status, 200)
+  assert.equal(detail.json.loop.who, 'Ana Ruiz')
+  assert.match(detail.json.loop.ask, /Send latest deck/)
+  assert.equal(detail.json.messages.length, 2)
+
+  const draft = await call(base, `/api/loop/${ana.threadId}/draft`, {
+    method: 'POST',
+    headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ intent: "yeah tell her I'll send it by 4:30" }),
+  })
+  assert.equal(draft.status, 200)
+  assert.equal(draft.json.provider, 'rules')
+  assert.equal(draft.json.draft, "Yes — I'll send it by 4:30.")
+
+  const send = await call(base, `/api/loop/${ana.threadId}/send`, {
+    method: 'POST',
+    headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: draft.json.draft }),
+  })
+  assert.equal(send.status, 200)
+  assert.equal(send.json.ok, true)
+  assert.equal(send.json.via, 'demo')
+  assert.equal(send.json.remaining, 4)
+
+  const after = await call(base, '/api/inbox', { headers: auth })
+  assert.equal(after.json.loops.length, 4)
+  assert.ok(!after.json.loops.some((l: any) => l.who === 'Ana Ruiz'))
+
+  const digest = await call(base, '/api/digest', { headers: auth })
+  assert.equal(digest.status, 200)
+  assert.equal(digest.json.items.length, 5)
+  assert.equal(digest.json.items[0].channel, 'DeFi Digest')
+})
+
+test('snooze removes a loop from the brief but keeps the count', async t => {
+  const { server, base } = await boot()
+  t.after(() => server.close())
+  const session = await call(base, '/api/session/demo', { method: 'POST' })
+  const auth = { Authorization: `Bearer ${session.json.token}`, 'Content-Type': 'application/json' }
+
+  const priya = session.json.inbox.loops.find((l: any) => l.who === 'Priya Shah')
+  assert.ok(priya, 'Priya loop exists')
+  const snooze = await call(base, `/api/loop/${priya.threadId}/snooze`, {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ minutes: 60 }),
+  })
+  assert.equal(snooze.status, 200)
+  assert.equal(snooze.json.inbox.loops.length, 4)
+  assert.equal(snooze.json.inbox.snoozed, 1)
+  assert.ok(!snooze.json.inbox.loops.some((l: any) => l.who === 'Priya Shah'))
+})
+
+test('voice endpoint supports explicit demo utterance and rejects empty audio', async t => {
+  const { server, base } = await boot()
+  t.after(() => server.close())
+  const session = await call(base, '/api/session/demo', { method: 'POST' })
+  const auth = { Authorization: `Bearer ${session.json.token}`, 'Content-Type': 'application/json' }
+
+  const demo = await call(base, '/api/transcribe', {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ demoUtterance: "yeah tell her I'll send it by 4:30" }),
+  })
+  assert.equal(demo.status, 200)
+  assert.equal(demo.json.provider, 'demo')
+  assert.match(demo.json.text, /4:30/)
+
+  const empty = await call(base, '/api/transcribe', {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ pcm: '' }),
+  })
+  assert.equal(empty.status, 400)
+
+  const short = await call(base, '/api/transcribe', {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ pcm: Buffer.alloc(200, 1).toString('base64') }),
+  })
+  assert.equal(short.status, 400)
+
+  const noKey = await call(base, '/api/transcribe', {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ pcm: Buffer.alloc(3200, 1).toString('base64') }),
+  })
+  assert.equal(noKey.status, 503)
+  assert.equal(noKey.json.error, 'stt_not_configured')
+})
+
+test('pairing codes are account-scoped and expire cleanly', async t => {
+  const { server, base } = await boot()
+  t.after(() => server.close())
+  const session = await call(base, '/api/session/demo', { method: 'POST' })
+  const auth = { Authorization: `Bearer ${session.json.token}`, 'Content-Type': 'application/json' }
+
+  const pair = await call(base, '/api/pair/new', { method: 'POST', headers: auth })
+  assert.equal(pair.status, 200)
+  assert.match(pair.json.code, /^[0-9]{6}$/)
+  assert.equal(pair.json.telegramAvailable, false)
+
+  const status = await call(base, `/api/pair/${pair.json.code}`, { headers: auth })
+  assert.equal(status.status, 200)
+  assert.equal(status.json.status, 'waiting')
+
+  const start = await call(base, `/api/pair/${pair.json.code}/telegram/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone: '+971501234567' }),
+  })
+  assert.equal(start.status, 503)
+  assert.equal(start.json.error, 'telegram_not_configured')
+
+  const other = await call(base, '/api/session/demo', { method: 'POST' })
+  const otherAuth = { Authorization: `Bearer ${other.json.token}` }
+  const foreign = await call(base, `/api/pair/${pair.json.code}`, { headers: otherAuth })
+  assert.equal(foreign.status, 410)
+})
+
+test('auth, reset, export and account deletion', async t => {
+  const { server, base } = await boot()
+  t.after(() => server.close())
+
+  const unauth = await call(base, '/api/inbox')
+  assert.equal(unauth.status, 401)
+
+  const bad = await call(base, '/api/inbox', { headers: { Authorization: 'Bearer nope' } })
+  assert.equal(bad.status, 401)
+
+  const session = await call(base, '/api/session/demo', { method: 'POST' })
+  const token = session.json.token
+  const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+
+  const ana = session.json.inbox.loops.find((l: any) => l.who === 'Ana Ruiz')
+  assert.ok(ana, 'Ana loop exists')
+  await call(base, `/api/loop/${ana.threadId}/send`, {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ text: 'Sent.' }),
+  })
+  const reset = await call(base, '/api/demo/reset', { method: 'POST', headers: auth })
+  assert.equal(reset.status, 200)
+  assert.equal(reset.json.inbox.loops.length, 5)
+
+  const exported = await call(base, '/api/export', { headers: auth })
+  assert.equal(exported.status, 200)
+  assert.equal(exported.json.threads.length, 9)
+  assert.ok(exported.json.messages.length > 10)
+
+  const deleted = await call(base, '/api/account', { method: 'DELETE', headers: auth })
+  assert.equal(deleted.status, 200)
+  const gone = await call(base, '/api/inbox', { headers: auth })
+  assert.equal(gone.status, 401)
+})
+
+test('input validation and unknown loops are safe', async t => {
+  const { server, base } = await boot()
+  t.after(() => server.close())
+  const session = await call(base, '/api/session/demo', { method: 'POST' })
+  const auth = { Authorization: `Bearer ${session.json.token}`, 'Content-Type': 'application/json' }
+
+  const missing = await call(base, '/api/loop/nope', { headers: auth })
+  assert.equal(missing.status, 404)
+
+  const ana = session.json.inbox.loops.find((l: any) => l.who === 'Ana Ruiz')
+  assert.ok(ana, 'Ana loop exists')
+  const empty = await call(base, `/api/loop/${ana.threadId}/send`, {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ text: '   ' }),
+  })
+  assert.equal(empty.status, 400)
+
+  const huge = await call(base, `/api/loop/${ana.threadId}/send`, {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ text: 'x'.repeat(1300) }),
+  })
+  assert.equal(huge.status, 400)
+
+  const noAuthPair = await call(base, '/api/pair/new', { method: 'POST' })
+  assert.equal(noAuthPair.status, 401)
+
+  const pairPage = await call(base, '/pair?code=123456')
+  assert.equal(pairPage.status, 200)
+  assert.match(String(pairPage.json), /Pair your glasses/)
+  assert.match(String(pairPage.json), /123456/)
+})

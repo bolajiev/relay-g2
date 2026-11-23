@@ -1,0 +1,45 @@
+{
+  "name": "relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Relay \u2014 reply debt, cleared. A Telegram reply layer for Even G2.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.17"
+  },
+  "scripts": {
+    "dev": "vite --config app/vite.config.ts",
+    "dev:server": "tsx watch server/src/index.ts",
+    "start": "tsx server/src/index.ts",
+    "build": "tsc --noEmit && vite build --config app/vite.config.ts",
+    "preview": "vite preview --config app/vite.config.ts --host 127.0.0.1 --port 5200",
+    "test": "tsx --test server/test/*.test.ts app/test/*.test.ts",
+    "test:server": "tsx --test server/test/*.test.ts",
+    "test:app": "tsx --test app/test/*.test.ts",
+    "sim": "evenhub-simulator 'http://127.0.0.1:5200/?fresh=1' --automation-port 9898",
+    "pack": "npm run build && cd app && evenhub pack app.json dist -o relay.ehpk --sdk-ver 0.0.16",
+    "e2e": "tsx tools/e2e.ts",
+    "shots": "tsx tools/shots.ts",
+    "video": "tsx tools/video.ts",
+    "demo": "bash tools/demo.sh",
+    "test:e2e": "tsx tools/e2e.ts"
+  },
+  "dependencies": {
+    "@evenrealities/even_hub_sdk": "0.0.16",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "telegram": "^2.26.22"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "@types/pngjs": "^6.0.5",
+    "pngjs": "^7.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11"
+  }
+}

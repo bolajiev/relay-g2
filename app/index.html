@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#232323" />
+    <title>Relay for Even G2</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #232323;
+        color: #e5e5e5;
+        font: 14px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        touch-action: manipulation;
+        -webkit-text-size-adjust: 100%;
+        overscroll-behavior: none;
+      }
+      #app {
+        display: flex;
+        height: 100%;
+        align-items: center;
+        justify-content: center;
+        padding: 32px;
+        box-sizing: border-box;
+        text-align: center;
+      }
+      .mark {
+        letter-spacing: .34em;
+        font-size: 12px;
+        color: #6f8a76;
+        margin-bottom: 14px;
+      }
+      h1 { font-size: 20px; font-weight: 500; margin: 0 0 8px; }
+      p { color: #8fa095; margin: 0; max-width: 300px; }
+      .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #67ff8b; margin-right: 8px; vertical-align: 1px; }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div>
+        <div class="mark">RELAY</div>
+        <h1>Look at your glasses</h1>
+        <p><span class="dot"></span>Companion shell is running. Your brief is on the G2 display.</p>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

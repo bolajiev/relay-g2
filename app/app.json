@@ -1,0 +1,28 @@
+{
+  "package_id": "com.relay.g2",
+  "edition": "202601",
+  "name": "Relay",
+  "version": "0.1.0",
+  "description": "Reply debt, cleared. Reads your Telegram open loops and sends voice-drafted replies from Even G2.",
+  "min_app_version": "2.2.10",
+  "min_sdk_version": "0.0.16",
+  "entrypoint": "index.html",
+  "permissions": [
+    {
+      "name": "network",
+      "desc": "Fetches your ranked reply brief and sends replies you approve through the Relay server.",
+      "whitelist": [
+        "http://127.0.0.1:8787",
+        "http://localhost:8787",
+        "https://api.relay.app"
+      ]
+    },
+    {
+      "name": "g2-microphone",
+      "desc": "Records a short voice reply while you hold the ring. Audio is sent to your Relay server for transcription and is not stored."
+    }
+  ],
+  "supported_languages": [
+    "en"
+  ]
+}
