@@ -198,6 +198,22 @@ async function main(): Promise<void> {
   await input('double_click')
   await waitLog(/RELAY BRIEF/)
 
+  console.log('Relay E2E · sensitive review gate')
+  await input('click')
+  await waitLog(/RELAY OPEN Launch team/)
+  await sleep(500)
+  await shot('detail-check')
+  const beforeReview = lastId
+  await input('click')
+  await sleep(800)
+  const afterTap = await consoleEntries(beforeReview)
+  assert.ok(!afterTap.some(e => /RELAY SENT/.test(e.message)), 'sensitive tap must open review, not send')
+  await shot('draft-check')
+  await input('double_click')
+  await sleep(500)
+  await input('double_click')
+  await waitLog(/RELAY BRIEF/)
+
   const all = await consoleEntries(-1)
   const errors = all.filter(e => e.level === 'error' || /create page failed|render failed/.test(e.message))
   assert.deepEqual(errors.map(e => e.message), [], 'no app errors in console')

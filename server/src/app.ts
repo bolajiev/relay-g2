@@ -3,7 +3,7 @@ import cors from 'cors'
 import type { Config } from './config'
 import { ServiceError } from './errors'
 import { RateLimiter, decryptSecret, encryptSecret } from './security'
-import { draftReply } from '../../shared/loops'
+import { draftPolicy } from '../../shared/loops'
 import type { Account } from '../../shared/types'
 import type { Store } from './store'
 import { draftWithAI } from './services/ai'
@@ -102,7 +102,7 @@ export function createApp(deps: AppDeps): express.Express {
         llm: config.llm.enabled,
         stt: config.stt.enabled || Boolean(config.stt.localBin),
       },
-      stats: store.stats(),
+      stats: store.counts(),
     })
   })
 
@@ -173,9 +173,9 @@ export function createApp(deps: AppDeps): express.Express {
       return
     }
     const intent = typeof req.body?.intent === 'string' ? req.body.intent.trim().slice(0, 600) : undefined
-    const rules = draftReply(detail.loop, intent)
-    const ai = await draftWithAI(config, account, detail.loop, detail.messages, intent)
-    res.json({ draft: ai ?? rules, provider: ai ? 'llm' : 'rules' })
+    const policy = draftPolicy(detail.loop, intent)
+    const ai = policy.allowAi ? await draftWithAI(config, account, detail.loop, detail.messages, intent) : null
+    res.json({ draft: ai ?? policy.rules, provider: ai ? 'llm' : 'rules' })
   })
 
   app.post('/api/loop/:id/send', async (req, res) => {
@@ -213,7 +213,7 @@ export function createApp(deps: AppDeps): express.Express {
       }
     }
 
-    const result = store.send(account.id, req.params.id, body, now())
+    const result = store.send(account.id, req.params.id, body, now(), detail.loop)
     if (!result) {
       res.status(404).json({ error: 'loop_not_found' })
       return
@@ -233,6 +233,18 @@ export function createApp(deps: AppDeps): express.Express {
     res.json({ ok: true, minutes, inbox: store.inbox(account.id, now()) })
   })
 
+  app.post('/api/loop/:id/vip', (req, res) => {
+    const account = auth(req, res)
+    if (!account) return
+    const vip = Boolean(req.body?.vip)
+    const ok = store.setVip(account.id, req.params.id, vip)
+    if (!ok) {
+      res.status(404).json({ error: 'loop_not_found' })
+      return
+    }
+    res.json({ ok: true, vip, inbox: store.inbox(account.id, now()) })
+  })
+
   app.post('/api/loop/:id/mute', (req, res) => {
     const account = auth(req, res)
     if (!account) return
@@ -243,6 +255,12 @@ export function createApp(deps: AppDeps): express.Express {
       return
     }
     res.json({ ok: true, muted, inbox: store.inbox(account.id, now()) })
+  })
+
+  app.get('/api/stats', (req, res) => {
+    const account = auth(req, res)
+    if (!account) return
+    res.json(store.stats(account.id))
   })
 
   app.get('/api/digest', (req, res) => {
@@ -304,6 +322,14 @@ export function createApp(deps: AppDeps): express.Express {
     await telegram.disconnect(account.id)
     store.deleteAccount(account.id)
     res.json({ ok: true })
+  })
+
+  app.post('/api/session/revoke', async (req, res) => {
+    const account = auth(req, res)
+    if (!account) return
+    await telegram.disconnect(account.id)
+    store.resetDemo(account.id, now())
+    res.json({ ok: true, inbox: store.inbox(account.id, now()) })
   })
 
   app.post('/api/pair/new', (req, res) => {

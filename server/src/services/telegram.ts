@@ -5,7 +5,7 @@ import { ServiceError } from '../errors'
 
 /* The GramJS package is CommonJS and only needed when live Telegram is used.
  * Loading it lazily keeps demo mode fast and dependency-light at runtime. */
-type AnyClient = {
+export type AnyClient = {
   connect: () => Promise<void>
   disconnect: () => Promise<void>
   invoke: (req: unknown) => Promise<unknown>
@@ -49,7 +49,7 @@ interface TelegramMessage {
   senderId?: { toString(): string } | number | string
 }
 
-interface GramModule {
+export interface GramModule {
   TelegramClient: new (session: unknown, apiId: number, apiHash: string, opts: Record<string, unknown>) => AnyClient
   Api: {
     auth: { SignIn: new (args: Record<string, unknown>) => unknown }
@@ -117,19 +117,28 @@ function authorOf(m: TelegramMessage): string {
   return s.title || [s.firstName, s.lastName].filter(Boolean).join(' ') || s.username || 'Telegram'
 }
 
+export interface TelegramDeps {
+  /** Test seam: replace the lazy GramJS loader with a fake client. */
+  loadGram?: () => Promise<{ gram: GramModule; StringSession: new (session?: string) => { save(): string } }>
+}
+
 export class TelegramService {
   private pending = new Map<string, PendingLogin>()
   private clients = new Map<string, AnyClient>()
   private gram: GramModule | null = null;
   private StringSession: (new (session?: string) => { save(): string }) | null = null
 
-  constructor(private readonly config: Config) {}
+  constructor(
+    private readonly config: Config,
+    private readonly deps: TelegramDeps = {},
+  ) {}
 
   get enabled(): boolean {
     return this.config.telegram.enabled
   }
 
   private async load(): Promise<{ gram: GramModule; StringSession: new (session?: string) => { save(): string } }> {
+    if (this.deps.loadGram) return this.deps.loadGram()
     if (!this.gram || !this.StringSession) {
       const gramPath = require.resolve('telegram')
       const sessionsPath = require.resolve('telegram/sessions/index.js')

@@ -37,6 +37,8 @@ export function pairPage({ code, telegramAvailable }: PairPageOptions): string {
   .step { display:none; }
   .step.active { display:block; }
   .meta { margin-top:18px; padding-top:14px; border-top:1px solid var(--line); color:#5d7464; font-size:11px; line-height:1.6; }
+  .consent { display:flex; gap:10px; align-items:flex-start; margin-top:14px; color:var(--dim); font-size:12px; line-height:1.5; }
+  .consent input { width:auto; margin:2px 0 0; accent-color:#67ff8b; }
   .pill { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:2px 8px; font-size:10px; letter-spacing:.12em; color:var(--dim); }
   a { color:#8dffab; }
 </style>
@@ -57,6 +59,7 @@ export function pairPage({ code, telegramAvailable }: PairPageOptions): string {
   <section id="step-telegram" class="step">
     <label for="phone">TELEGRAM PHONE NUMBER</label>
     <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+971 50 123 4567">
+    <label class="consent"><input type="checkbox" id="consent"> I understand Relay reads my most recent Telegram chats and sends a reply only when I tap send. I can disconnect and delete the session from the glasses at any time.</label>
     <button id="send-code">${telegramAvailable ? 'Send login code' : 'Telegram not configured'}</button>
     <button class="ghost" id="back-code">Back</button>
     <div class="meta">Use international format. Relay asks Telegram for a login code; the code is never stored.</div>
@@ -120,6 +123,7 @@ export function pairPage({ code, telegramAvailable }: PairPageOptions): string {
   document.getElementById('back-code').addEventListener('click', function () { show('step-code'); say(''); });
 
   document.getElementById('send-code').addEventListener('click', async function () {
+    if (!document.getElementById('consent').checked) { say('Please confirm the access note first.', true); return; }
     state.phone = document.getElementById('phone').value.trim();
     if (!state.phone) { say('Enter your phone number.', true); return; }
     say('Asking Telegram for a code…');

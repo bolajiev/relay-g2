@@ -381,6 +381,50 @@ async function snoozeCurrent(): Promise<void> {
   }
 }
 
+async function toggleVip(): Promise<void> {
+  const loop = state.detail?.loop
+  if (!loop) return
+  try {
+    const inbox = await api.setVip(loop.threadId, !loop.vip)
+    loop.vip = !loop.vip
+    applyInbox(inbox)
+    setNote(`VIP ${loop.vip ? 'on' : 'off'}`, 3000)
+    await paint()
+    log(`VIP ${loop.vip ? 'on' : 'off'}`)
+  } catch (err) {
+    setNote(err instanceof Error ? err.message : 'Could not update VIP', 0)
+    await paint()
+  }
+}
+
+async function muteCurrent(): Promise<void> {
+  const loop = state.detail?.loop
+  if (!loop) return
+  try {
+    const inbox = await api.mute(loop.threadId)
+    applyInbox(inbox)
+    await openBrief('Muted')
+    log('MUTED')
+  } catch (err) {
+    setNote(err instanceof Error ? err.message : 'Could not mute', 0)
+    await paint()
+  }
+}
+
+async function revokeTelegram(): Promise<void> {
+  try {
+    const inbox = await api.revokeTelegram()
+    applyInbox(inbox)
+    state.demo = true
+    state.offline = api.offline
+    await openBrief('Telegram disconnected · demo restored')
+    log('REVOKED')
+  } catch (err) {
+    setNote(err instanceof Error ? err.message : 'Could not revoke', 0)
+    await paint()
+  }
+}
+
 async function refresh(): Promise<void> {
   if (state.screen === 'digest') {
     await openDigest()
@@ -424,7 +468,16 @@ async function handleTap(): Promise<void> {
     case 'brief':
       await openDetail(state.selected)
       break
-    case 'detail':
+    case 'detail': {
+      const loop = state.detail?.loop
+      if (loop && (loop.sensitivity === 'sensitive' || loop.askClass === 'possible')) {
+        go('draft')
+        await paint()
+        break
+      }
+      await sendDraft()
+      break
+    }
     case 'draft':
       await sendDraft()
       break
@@ -506,6 +559,8 @@ async function handleMenu(id: number): Promise<void> {
   if (id === 1) await openDigest()
   else if (id === 2) await openPair()
   else if (id === 3) await refresh()
+  else if (id === 4) await toggleVip()
+  else if (id === 5) await muteCurrent()
 }
 
 let lastLongPressAt = 0
@@ -558,7 +613,8 @@ bridge.onEvenHubEvent(event => {
       } else if (state.screen === 'digest') {
         void openDigest()
       } else if (state.screen === 'pair') {
-        void openPair()
+        if (state.pair?.status === 'connected') void revokeTelegram()
+        else void openPair()
       }
       return
     }

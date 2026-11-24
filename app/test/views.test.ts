@@ -101,6 +101,56 @@ test('brief header carries later and offline state', () => {
   assert.match(header.content, /OFFLINE DEMO/)
 })
 
+function stateFor(screen: ScreenName, who: string): ViewState {
+  const s = state(screen)
+  const loop = loops.find(l => l.who === who)
+  assert.ok(loop, `${who} loop`)
+  s.detail = { loop, messages: [] }
+  s.draft = loop.draft
+  s.loops = [loop, ...s.loops.filter(l => l.id !== loop.id)]
+  return s
+}
+
+test('sensitive asks show CHECK and require an explicit review', () => {
+  const s = stateFor('detail', 'Launch team')
+  const view = viewFor(s)
+  const header = view.boxes.find(b => b.name === 'header')!
+  const footer = view.boxes.find(b => b.name === 'footer')!
+  const draft = view.boxes.find(b => b.name === 'draft')!
+  assert.match(header.content, /CHECK/)
+  assert.match(footer.content, /TAP review/)
+  assert.match(draft.content, /DRAFT · CHECK/)
+  assert.ok(view.menu.some(m => m.name === 'VIP: on'))
+  assert.ok(view.menu.some(m => m.name === 'Mute sender'))
+  assert.deepEqual(validateView(view), [])
+  assert.deepEqual(overflow(view), [])
+})
+
+test('possible asks show MAYBE and never look like a one-tap commitment', () => {
+  const s = stateFor('detail', 'Priya Shah')
+  const view = viewFor(s)
+  assert.match(view.boxes.find(b => b.name === 'header')!.content, /MAYBE/)
+  assert.match(view.boxes.find(b => b.name === 'footer')!.content, /TAP review/)
+  assert.match(view.boxes.find(b => b.name === 'draft')!.content, /Let me check and get back to you/)
+})
+
+test('draft screen keeps the safety tag for a sensitive thread', () => {
+  const s = stateFor('draft', 'Launch team')
+  const view = viewFor(s)
+  assert.match(view.boxes.find(b => b.name === 'header')!.content, /CHECK/)
+})
+
+test('connected pair screen offers hold-to-revoke', () => {
+  const s = state('pair')
+  s.pair = { code: '482913', status: 'connected', expiresAt: NOW + 600_000 }
+  const view = viewFor(s)
+  const footer = view.boxes.find(b => b.name === 'footer')!
+  assert.match(footer.content, /HOLD revoke/)
+  assert.match(view.boxes.find(b => b.name === 'body')!.content, /hold to disconnect/)
+  assert.equal(view.boxes.find(b => b.name === 'code'), undefined)
+  assert.deepEqual(validateView(view), [])
+})
+
 test('detail carries who, the ask, message context and the draft', () => {
   const view = viewFor(state('detail'))
   const all = view.boxes.map(b => b.content).join('\n')

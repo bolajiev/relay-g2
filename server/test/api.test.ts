@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { once } from 'node:events'
-import type { Server } from 'node:http'
+import http, { type Server } from 'node:http'
 import test from 'node:test'
 import { createApp } from '../src/app'
 import { loadConfig } from '../src/config'
 import { Store } from '../src/store'
 
-async function boot() {
+async function boot(overrides: NodeJS.ProcessEnv = {}) {
   const config = loadConfig({
     ...process.env,
     DEMO_ENABLED: 'true',
@@ -18,6 +18,7 @@ async function boot() {
     OPENAI_API_KEY: '',
     WHISPER_BIN: '',
     CORS_ORIGIN: '*',
+    ...overrides,
   })
   const store = new Store('/tmp/relay-test-db.json', { memory: true })
   const app = createApp({ store, config })
@@ -27,6 +28,10 @@ async function boot() {
   if (!address || typeof address === 'string') throw new Error('no port')
   const base = `http://127.0.0.1:${address.port}`
   return { server, base, store, config }
+}
+
+async function sleep(ms: number) {
+  await new Promise(resolve => setTimeout(resolve, ms))
 }
 
 async function call(base: string, path: string, init: RequestInit = {}) {
@@ -64,6 +69,12 @@ test('demo session → inbox → draft → send → inbox shrinks', async t => {
   assert.equal(inbox.json.loops.length, 5)
   assert.equal(inbox.json.channels, 2)
   assert.equal(inbox.json.demo, true)
+  const anaMeta = inbox.json.loops.find((l: any) => l.who === 'Ana Ruiz')
+  const marcusMeta = inbox.json.loops.find((l: any) => l.who === 'Launch team')
+  const priyaMeta = inbox.json.loops.find((l: any) => l.who === 'Priya Shah')
+  assert.deepEqual([anaMeta.askClass, anaMeta.sensitivity, anaMeta.vip], ['clear', 'normal', true])
+  assert.equal(marcusMeta.sensitivity, 'sensitive')
+  assert.equal(priyaMeta.askClass, 'possible')
   assert.equal(inbox.json.connected, false)
   assert.equal(inbox.headers.get('access-control-allow-origin'), '*')
 
@@ -71,6 +82,7 @@ test('demo session → inbox → draft → send → inbox shrinks', async t => {
   assert.ok(ana, 'Ana loop exists')
   const detail = await call(base, `/api/loop/${ana.threadId}`, { headers: auth })
   assert.equal(detail.status, 200)
+  await sleep(40)
   assert.equal(detail.json.loop.who, 'Ana Ruiz')
   assert.match(detail.json.loop.ask, /Send latest deck/)
   assert.equal(detail.json.messages.length, 2)
@@ -102,6 +114,14 @@ test('demo session → inbox → draft → send → inbox shrinks', async t => {
   assert.equal(digest.status, 200)
   assert.equal(digest.json.items.length, 5)
   assert.equal(digest.json.items[0].channel, 'DeFi Digest')
+
+  const stats = await call(base, '/api/stats', { headers: auth })
+  assert.equal(stats.status, 200)
+  assert.equal(stats.json.cleared, 1)
+  assert.equal(stats.json.sensitiveCleared, 0)
+  assert.equal(stats.json.resolveSamples, 1)
+  assert.ok(stats.json.avgResolveMs >= 20, `resolve time ${stats.json.avgResolveMs}ms`)
+  assert.equal(stats.json.openLoops, 4)
 })
 
 test('snooze removes a loop from the brief but keeps the count', async t => {
@@ -121,6 +141,127 @@ test('snooze removes a loop from the brief but keeps the count', async t => {
   assert.equal(snooze.json.inbox.loops.length, 4)
   assert.equal(snooze.json.inbox.snoozed, 1)
   assert.ok(!snooze.json.inbox.loops.some((l: any) => l.who === 'Priya Shah'))
+})
+
+test('vip and mute controls change the ranking input and hide a thread', async t => {
+  const { server, base } = await boot()
+  t.after(() => server.close())
+  const session = await call(base, '/api/session/demo', { method: 'POST' })
+  const auth = { Authorization: `Bearer ${session.json.token}`, 'Content-Type': 'application/json' }
+  const priya = session.json.inbox.loops.find((l: any) => l.who === 'Priya Shah')
+  assert.ok(priya)
+
+  const vip = await call(base, `/api/loop/${priya.threadId}/vip`, {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ vip: true }),
+  })
+  assert.equal(vip.status, 200)
+  assert.equal(vip.json.inbox.loops.find((l: any) => l.who === 'Priya Shah').vip, true)
+
+  const mute = await call(base, `/api/loop/${priya.threadId}/mute`, {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ muted: true }),
+  })
+  assert.equal(mute.status, 200)
+  assert.ok(!mute.json.inbox.loops.some((l: any) => l.who === 'Priya Shah'))
+})
+
+test('sensitive sends are counted separately in stats', async t => {
+  const { server, base } = await boot()
+  t.after(() => server.close())
+  const session = await call(base, '/api/session/demo', { method: 'POST' })
+  const auth = { Authorization: `Bearer ${session.json.token}`, 'Content-Type': 'application/json' }
+  const marcus = session.json.inbox.loops.find((l: any) => l.who === 'Launch team')
+  assert.ok(marcus)
+  const detail = await call(base, `/api/loop/${marcus.threadId}`, { headers: auth })
+  assert.equal(detail.json.loop.draft, 'Let me check and get back to you.')
+  await sleep(30)
+  const send = await call(base, `/api/loop/${marcus.threadId}/send`, {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ text: 'Let me check and get back to you.' }),
+  })
+  assert.equal(send.status, 200)
+  const stats = await call(base, '/api/stats', { headers: auth })
+  assert.equal(stats.json.cleared, 1)
+  assert.equal(stats.json.sensitiveCleared, 1)
+})
+
+test('revoking a session deletes the Telegram link and restores the demo', async t => {
+  const { server, base, store } = await boot()
+  t.after(() => server.close())
+  const session = await call(base, '/api/session/demo', { method: 'POST' })
+  const auth = { Authorization: `Bearer ${session.json.token}`, 'Content-Type': 'application/json' }
+  const account = store.accountByToken(session.json.token)
+  assert.ok(account)
+  store.setTelegram(account.id, { sessionEnc: 'ciphertext', tgUserId: '42', tgName: 'Test' })
+  assert.equal(store.account(account.id)?.tgSessionEnc, 'ciphertext')
+
+  const revoked = await call(base, '/api/session/revoke', { method: 'POST', headers: auth })
+  assert.equal(revoked.status, 200)
+  assert.equal(revoked.json.inbox.demo, true)
+  assert.equal(revoked.json.inbox.loops.length, 5)
+  assert.equal(store.account(account.id)?.tgSessionEnc, undefined)
+})
+
+test('sensitive and hedged drafts never reach the LLM', async t => {
+  const llmCalls: string[] = []
+  const llmServer = http.createServer((req, res) => {
+    let body = ''
+    req.on('data', chunk => (body += chunk))
+    req.on('end', () => {
+      llmCalls.push(body)
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ choices: [{ message: { content: 'AI SAYS YES' } }] }))
+    })
+  })
+  llmServer.listen(0, '127.0.0.1')
+  await once(llmServer, 'listening')
+  const llmAddress = llmServer.address()
+  if (!llmAddress || typeof llmAddress === 'string') throw new Error('no llm port')
+
+  const { server, base } = await boot({
+    LLM_API_KEY: 'test-key',
+    LLM_BASE_URL: `http://127.0.0.1:${llmAddress.port}/v1`,
+  })
+  t.after(() => {
+    server.close()
+    llmServer.close()
+  })
+
+  const session = await call(base, '/api/session/demo', { method: 'POST' })
+  const auth = { Authorization: `Bearer ${session.json.token}`, 'Content-Type': 'application/json' }
+  const marcus = session.json.inbox.loops.find((l: any) => l.who === 'Launch team')
+  assert.ok(marcus)
+  await call(base, `/api/loop/${marcus.threadId}`, { headers: auth })
+
+  const neutral = await call(base, `/api/loop/${marcus.threadId}/draft`, {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({}),
+  })
+  assert.equal(neutral.json.draft, 'Let me check and get back to you.')
+  assert.equal(neutral.json.provider, 'rules')
+  assert.equal(llmCalls.length, 0, 'no LLM call without intent')
+
+  const uncertain = await call(base, `/api/loop/${marcus.threadId}/draft`, {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ intent: 'maybe friday' }),
+  })
+  assert.equal(uncertain.json.draft, "Maybe Friday — I'll confirm.")
+  assert.equal(llmCalls.length, 0, 'no LLM call for hedged intent')
+
+  const explicit = await call(base, `/api/loop/${marcus.threadId}/draft`, {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ intent: 'yes approve it' }),
+  })
+  assert.equal(explicit.json.provider, 'llm')
+  assert.equal(explicit.json.draft, 'AI SAYS YES')
+  assert.equal(llmCalls.length, 1, 'explicit intent may use the LLM')
 })
 
 test('voice endpoint supports explicit demo utterance and rejects empty audio', async t => {

@@ -50,8 +50,10 @@ BRIEF2 = next((t for t in BRIEFS if t > SENT), 22.0)
 BRIEF3 = next((t for t in BRIEFS if t > DIGEST), 31.0)
 BRIEF4 = next((t for t in BRIEFS if t > PAIR), 39.0)
 CAPTURE_END = META["duration"]
-END_EXTRA = 4.0
-TOTAL = CAPTURE_END + END_EXTRA
+END_EXTRA = 8.0
+SAFETY_START = CAPTURE_END
+SAFETY_END = CAPTURE_END + 4.0
+TOTAL = SAFETY_END + 4.0
 
 print(
     f"timeline open={OPEN} listen={LISTEN} draft={DRAFT} sent={SENT} "
@@ -188,7 +190,7 @@ def compose(t, raw_path=None):
     if t < 3.5:
         draw_title(d)
         return img
-    if t >= CAPTURE_END:
+    if t >= SAFETY_END:
         draw_end(d)
         d.line([(110, 1008), (1810, 1008)], fill=(20, 38, 27), width=1)
         return img
@@ -198,6 +200,27 @@ def compose(t, raw_path=None):
     right = "EVEN G2  ·  576 × 288"
     rw = d.textlength(right, font=F["label"])
     d.text((W - 110 - rw, 52), right, font=F["label"], fill=FAINT)
+
+    if SAFETY_START <= t < SAFETY_END:
+        first = t < SAFETY_START + 2
+        raw = "docs/detail-check.png" if first else "docs/draft-check.png"
+        disp = display_frame(raw)
+        img.paste(disp, (DISP_X, DISP_Y))
+        d.rounded_rectangle(
+            (DISP_X - 4, DISP_Y - 4, DISP_X + DISP_W + 4, DISP_Y + DISP_H + 4),
+            radius=18,
+            outline=(34, 66, 44),
+            width=2,
+        )
+        eyebrow = "SAFETY · CHECK" if first else "SAFETY · REVIEW"
+        headline = "Sensitive ask? Never a default yes." if first else "Tap to review. Then send."
+        d.text((110, 790), eyebrow, font=F["eyebrow"], fill=GREEN)
+        d.text((110, 826), headline, font=F["headline"], fill=INK)
+        d.rectangle((110, 1022, 1810, 1025), fill=(22, 36, 27))
+        pct = max(0.0, min(1.0, t / TOTAL))
+        d.rectangle((110, 1022, 110 + int(1700 * pct), 1025), fill=(46, 128, 67))
+        return img
+
 
     if raw_path and os.path.exists(raw_path):
         disp = display_frame(raw_path)

@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { buildDigest, buildOpenLoops, countChannels } from '../../shared/loops'
 import { createSeed } from '../../shared/seed'
-import type { Account, DigestItem, Inbox, Loop, Message, Thread } from '../../shared/types'
+import type { Account, AccountStats, DigestItem, Inbox, Loop, Message, Thread } from '../../shared/types'
 import { hashToken, randomPairCode, randomToken } from './security'
 
 interface TokenRecord {
@@ -35,6 +35,7 @@ export interface SendResult {
 }
 
 const EMPTY: DB = { version: 1, accounts: [], threads: [], messages: [], tokens: [], pairCodes: [] }
+const emptyStats = (): AccountStats => ({ cleared: 0, sensitiveCleared: 0, totalResolveMs: 0, resolveSamples: 0 })
 const PAIR_TTL_MS = 10 * 60 * 1000
 
 export class Store {
@@ -77,6 +78,7 @@ export class Store {
       username: 'you',
       createdAt: now,
       styleSamples: [],
+      stats: emptyStats(),
     }
     const seed = createSeed(account.id, now)
     account.styleSamples = seed.styleSamples
@@ -133,16 +135,22 @@ export class Store {
   detail(accountId: string, threadId: string, now = Date.now()): { loop: Loop; messages: Message[] } | null {
     const thread = this.db.threads.find(t => t.id === threadId && t.accountId === accountId)
     if (!thread) return null
+    if (!thread.viewedAt) {
+      thread.viewedAt = now
+      this.save()
+    }
     const messages = this.db.messages.filter(m => m.threadId === threadId).sort((a, b) => a.at - b.at)
     const loop = buildOpenLoops([thread], messages, now)[0]
     if (!loop) return null
     return { loop, messages: messages.slice(-4) }
   }
 
-  send(accountId: string, threadId: string, text: string, now = Date.now()): SendResult | null {
+  send(accountId: string, threadId: string, text: string, now = Date.now(), loop?: Loop | null): SendResult | null {
     const thread = this.db.threads.find(t => t.id === threadId && t.accountId === accountId)
     if (!thread) return null
     if (thread.snoozedUntil) delete thread.snoozedUntil
+    const resolveMs = thread.viewedAt ? Math.max(0, now - thread.viewedAt) : 0
+    delete thread.viewedAt
     const message: Message = {
       id: `m_${crypto.randomBytes(6).toString('hex')}`,
       threadId,
@@ -153,6 +161,16 @@ export class Store {
     }
     this.db.messages.push(message)
     thread.lastMessageAt = now
+    const account = this.account(accountId)
+    if (account) {
+      const stats = (account.stats ??= emptyStats())
+      stats.cleared += 1
+      if (loop?.sensitivity === 'sensitive') stats.sensitiveCleared += 1
+      if (resolveMs > 0) {
+        stats.totalResolveMs += resolveMs
+        stats.resolveSamples += 1
+      }
+    }
     this.save()
     const inbox = this.inbox(accountId, now)
     return { message, remaining: inbox.loops.length }
@@ -164,6 +182,29 @@ export class Store {
     thread.snoozedUntil = now + Math.max(1, Math.min(minutes, 60 * 24 * 7)) * 60_000
     this.save()
     return true
+  }
+
+  setVip(accountId: string, threadId: string, vip: boolean): boolean {
+    const thread = this.db.threads.find(t => t.id === threadId && t.accountId === accountId)
+    if (!thread) return false
+    thread.vip = vip
+    thread.priority = vip ? 3 : thread.priority
+    this.save()
+    return true
+  }
+
+  stats(accountId: string): { cleared: number; sensitiveCleared: number; avgResolveMs: number; resolveSamples: number; openLoops: number; snoozed: number } {
+    const account = this.account(accountId)
+    const s = account?.stats ?? emptyStats()
+    const inbox = this.inbox(accountId)
+    return {
+      cleared: s.cleared,
+      sensitiveCleared: s.sensitiveCleared,
+      avgResolveMs: s.resolveSamples ? Math.round(s.totalResolveMs / s.resolveSamples) : 0,
+      resolveSamples: s.resolveSamples,
+      openLoops: inbox.loops.length,
+      snoozed: inbox.snoozed,
+    }
   }
 
   setMuted(accountId: string, threadId: string, muted: boolean): boolean {
@@ -188,6 +229,7 @@ export class Store {
     this.db.threads.push(...seed.threads)
     this.db.messages.push(...seed.messages)
     account.styleSamples = seed.styleSamples
+    account.stats = emptyStats()
     account.kind = 'demo'
     delete account.tgSessionEnc
     delete account.tgUserId
@@ -255,7 +297,7 @@ export class Store {
     return this.db.accounts.length !== before
   }
 
-  stats(): { accounts: number; threads: number; messages: number } {
+  counts(): { accounts: number; threads: number; messages: number } {
     return { accounts: this.db.accounts.length, threads: this.db.threads.length, messages: this.db.messages.length }
   }
 }

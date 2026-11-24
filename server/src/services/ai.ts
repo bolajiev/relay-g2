@@ -44,6 +44,8 @@ export async function draftWithAI(
     'Return only the message text, no quotes, no preamble, no explanation.',
     'Sound human and specific. Max 220 characters. No emojis. No greeting or sign-off.',
     'Preserve every fact, time and commitment from the spoken intent. Fix filler words.',
+    'Never add a commitment, amount, date or agreement that is not present in the spoken intent.',
+    'If the intent is hedged or uncertain, keep that uncertainty. Do not turn maybe into yes.',
     "Match the user's voice from the style samples.",
   ].join(' ')
 

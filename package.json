@@ -23,7 +23,8 @@
     "shots": "tsx tools/shots.ts",
     "video": "tsx tools/video.ts",
     "demo": "bash tools/demo.sh",
-    "test:e2e": "tsx tools/e2e.ts"
+    "test:e2e": "tsx tools/e2e.ts",
+    "metrics": "tsx tools/metrics.ts"
   },
   "dependencies": {
     "@evenrealities/even_hub_sdk": "0.0.16",

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildDigest, buildOpenLoops, detectUrgency, draftReply, extractAsk, shorten } from '../../shared/loops'
+import { buildDigest, buildOpenLoops, classifyAsk, defaultDraft, detectUrgency, draftReply, extractAsk, shorten } from '../../shared/loops'
 import { createSeed, demoUtteranceFor } from '../../shared/seed'
 import { pcmToWav } from '../src/services/stt'
 
@@ -36,6 +36,63 @@ test('asks are imperative, short and scannable', () => {
     const ask = extractAsk(text)
     assert.ok(ask && ask.length <= 46, `ask too long: ${ask}`)
   }
+})
+
+test('asks are classified as clear, possible or conversation', () => {
+  const money = classifyAsk('Can you send me the money tomorrow?')
+  assert.equal(money.classification, 'clear')
+  assert.equal(money.sensitivity, 'sensitive')
+
+  const hedged = classifyAsk('Maybe we should catch up next week?')
+  assert.equal(hedged.classification, 'possible')
+  assert.equal(hedged.sensitivity, 'normal')
+
+  const social = classifyAsk('How are you?')
+  assert.equal(social.classification, 'none')
+  assert.equal(social.ask, null)
+
+  const chatter = classifyAsk('Loved the demo today!')
+  assert.equal(chatter.classification, 'none')
+
+  const mixed = classifyAsk('Thanks! Can you send the deck by 5?')
+  assert.equal(mixed.classification, 'clear')
+  assert.match(mixed.ask ?? '', /Send deck by 5/)
+})
+
+test('sensitive and possible asks never get a default commitment', () => {
+  const money = classifyAsk('Can you send me the money tomorrow?')
+  const input = { ask: money.ask!, lastMessage: 'Can you send me the money tomorrow?', who: 'Sam' }
+  assert.equal(defaultDraft(input, money), 'Let me check and get back to you.')
+
+  const hedged = classifyAsk('Maybe we should catch up next week?')
+  assert.equal(defaultDraft({ ask: hedged.ask!, lastMessage: '', who: 'Sam' }, hedged), 'Let me check and get back to you.')
+
+  const normal = classifyAsk('Can you send me the latest deck before 5?')
+  assert.equal(normal.classification, 'clear')
+  assert.equal(normal.sensitivity, 'normal')
+  assert.match(defaultDraft({ ask: normal.ask!, lastMessage: 'Can you send me the latest deck before 5?', who: 'Ana' }, normal), /sending/i)
+})
+
+test('seed carries clear/possible/sensitive and VIP metadata', () => {
+  const { threads, messages } = createSeed('acc_meta', NOW)
+  const loops = buildOpenLoops(threads, messages, NOW)
+  const ana = loops.find(l => l.who === 'Ana Ruiz')!
+  const marcus = loops.find(l => l.who === 'Launch team')!
+  const priya = loops.find(l => l.who === 'Priya Shah')!
+  const sofia = loops.find(l => l.who === 'Sofia Marin')!
+  assert.deepEqual([ana.askClass, ana.sensitivity, ana.vip], ['clear', 'normal', true])
+  assert.deepEqual([marcus.askClass, marcus.sensitivity], ['clear', 'sensitive'])
+  assert.equal(priya.askClass, 'possible')
+  assert.equal(sofia.sensitivity, 'sensitive')
+  assert.equal(marcus.draft, 'Let me check and get back to you.')
+})
+
+test('spoken uncertainty survives the rewrite', () => {
+  const ana = { ask: 'Send latest deck before design review at 5', lastMessage: '', who: 'Ana' }
+  assert.equal(draftReply(ana, 'maybe friday'), "Maybe Friday — I'll confirm.")
+  assert.equal(draftReply(ana, 'tell him maybe friday'), "Maybe Friday — I'll confirm.")
+  assert.equal(draftReply(ana, "I might be able to do it tomorrow"), 'I might be able to do it tomorrow.')
+  assert.equal(draftReply(ana, "I'll send it by 4:30"), "Yes — I'll send it by 4:30.")
 })
 
 test('urgency recognises deadlines and falls back to priority', () => {

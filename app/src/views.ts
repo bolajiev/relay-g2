@@ -177,7 +177,8 @@ export function detailView(state: ViewState): View {
     return { boxes, menu: SCREEN_MENU }
   }
   const where = loop.kind === 'dm' ? 'DM' : loop.kind === 'group' ? 'GROUP' : 'CHANNEL'
-  boxes.push(header(`◀ ${loop.who.toUpperCase()} · ${where} · ${ageLabel(loop.ageMinutes)}`, 3))
+  const safety = loop.sensitivity === 'sensitive' ? ' · CHECK' : loop.askClass === 'possible' ? ' · MAYBE' : ''
+  boxes.push(header(`◀ ${loop.who.toUpperCase()} · ${where} · ${ageLabel(loop.ageMinutes)}${safety}`, 3))
   boxes.push(
     box({
       id: 3,
@@ -203,7 +204,7 @@ export function detailView(state: ViewState): View {
       y: 136,
       w: W - M * 2,
       h: 104,
-      content: `DRAFT${state.draftProvider === 'llm' ? ' · AI' : ''}\n${draftText}`,
+      content: `DRAFT${state.draftProvider === 'llm' ? ' · AI' : ''}${safety}\n${draftText}`,
       color: 4,
       border: 1,
       borderColor: 6,
@@ -211,8 +212,17 @@ export function detailView(state: ViewState): View {
       pad: 4,
     }),
   )
-  boxes.push(footer(state, 'TAP send · HOLD speak · SWIPE later'))
-  return { boxes, menu: SCREEN_MENU }
+  const actions =
+    loop.sensitivity === 'sensitive' || loop.askClass === 'possible'
+      ? 'TAP review · HOLD speak · SWIPE later'
+      : 'TAP send · HOLD speak · SWIPE later'
+  boxes.push(footer(state, actions))
+  const detailMenu = [
+    { id: 4, name: loop.vip ? 'VIP: on' : 'VIP: off' },
+    { id: 5, name: 'Mute sender' },
+    ...SCREEN_MENU,
+  ]
+  return { boxes, menu: detailMenu }
 }
 
 const BARS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█']
@@ -275,7 +285,8 @@ export function draftView(state: ViewState): View {
     return { boxes, menu: SCREEN_MENU }
   }
   const provider = state.draftProvider === 'llm' ? ' · AI' : state.draftProvider === 'demo' ? ' · VOICE DEMO' : ''
-  boxes.push(header(`DRAFT → ${shorten(loop.who.toUpperCase(), 20)}${provider}`, 3))
+  const safety = loop.sensitivity === 'sensitive' ? ' · CHECK' : loop.askClass === 'possible' ? ' · MAYBE' : ''
+  boxes.push(header(`DRAFT → ${shorten(loop.who.toUpperCase(), 20)}${provider}${safety}`, 3))
   boxes.push(
     box({
       id: 3,
@@ -394,7 +405,7 @@ export function pairView(state: ViewState): View {
       w: W - M * 2,
       h: 88,
       content: connected
-        ? 'Syncing your chats.\nYou can go back to the brief.'
+        ? 'Telegram connected.\nTap continue, hold to disconnect.'
         : `On your phone open:\n${shorten(state.pair?.url ?? 'relay.app/pair', 34)}\nThen enter this code:`,
       color: 3,
       pad: 2,
@@ -431,7 +442,7 @@ export function pairView(state: ViewState): View {
       pad: 2,
     }),
   )
-  boxes.push(footer(state, connected ? 'TAP continue' : 'TAP refresh · DOUBLE back'))
+  boxes.push(footer(state, connected ? 'TAP continue · HOLD revoke' : 'TAP refresh · DOUBLE back'))
   return { boxes, menu: connected ? SCREEN_MENU : [] }
 }
 

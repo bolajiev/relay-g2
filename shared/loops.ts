@@ -1,4 +1,4 @@
-import type { DigestItem, Loop, Message, Thread } from './types'
+import type { AskClass, DigestItem, Loop, Message, Sensitivity, Thread } from './types'
 
 const GREETING = /^(hey|hi|hello|yo|morning|good morning|quick q|quick question|just checking|btw|fyi)\b[\s,!—–-]*/i
 const POLITE_PREFIX = /^(can|could|would|will)\s+you\s+(please\s+)?/i
@@ -8,7 +8,26 @@ const TRAILING_POLITE = /\s*(thanks|thank you|thx|cheers|when you get a chance|i
 const NO_ACTION = /\b(no action needed|no action required|for your info|just fyi|no rush|nothing needed)\b/i
 const REQUEST_MARKER = /\b(can|could|would|please|need|sign|send|approve|book|share|confirm|review|call|let me know|due)\b/i
 const DEADLINE_MARKER = /\b(by|before|asap|urgent|eod|tonight|deadline|due|today|tomorrow|mon|tues|wednes|thurs|fri|satur|sun)day?\b/i
-const OBJECT_NOUN = /\b(contract|deck|doc|document|file|invoice|agreement|budget|proposal|report|deck|numbers|arr)\b/i
+const OBJECT_NOUN = /\b(contract|deck|doc|document|file|invoice|agreement|budget|proposal|report|numbers|arr)\b/i
+
+/**
+ * "Clear" asks are direct requests. "Possible" asks are hedged or social and
+ * should never produce a default commitment — the user gets a neutral draft
+ * and a review step. "None" is conversation, not an obligation.
+ */
+const SOCIAL =
+  /^(how are you|how'?s it going|how was|what'?s up|did you see|did you watch|good morning|good night|thanks|thank you|lol|haha)\b/i
+const HEDGE =
+  /\b(maybe|perhaps|might|possibly|not sure|i think|i guess|could be|if possible|no rush|when you get a chance|would be great|let me know if|if you'?re free|sometime|catch up)\b/i
+const SENSITIVE =
+  /\b(money|payment|pay|paid|transfer|wire|invoice|refund|contract|agreement|legal|lawyer|sign|signature|budget|approve|approval|loan|invest|investment|equity|bet|wager|purchase|deposit|commit|commitment|guarantee|promise|arr|revenue|valuation|funding|raise|term sheet)\b/i
+
+export interface AskInsight {
+  ask: string | null
+  classification: AskClass | 'none'
+  sensitivity: Sensitivity
+  reason: string
+}
 
 /** Compact one-line ask for a 576x288 card. */
 export function shorten(text: string, max = 46): string {
@@ -31,19 +50,19 @@ function sentenceCandidates(text: string): string[] {
     .filter(Boolean)
 }
 
-/**
- * Turn a raw inbound Telegram message into a short, scannable ask.
- * Deterministic on purpose: the demo must work with no LLM key.
- * Returns null for chatter that doesn't actually ask for anything.
- */
-export function extractAsk(raw: string): string | null {
+/** Extract the most likely ask from one inbound message, or null for chatter. */
+function askCandidate(raw: string): string | null {
   if (!raw || !raw.trim()) return null
   if (NO_ACTION.test(raw) && !raw.includes('?')) return null
 
   const sentences = sentenceCandidates(raw)
   if (!sentences.length) return null
 
-  const question = sentences.find(s => s.includes('?'))
+  // Prefer a question that actually asks for something over a social question
+  // such as "How are you?" that happens to come first.
+  const question =
+    sentences.find(s => s.includes('?') && REQUEST_MARKER.test(s)) ??
+    sentences.find(s => s.includes('?'))
   const request = sentences.find(s => REQUEST_MARKER.test(s))
   const chosen = question ?? request
   if (!chosen) return null
@@ -84,6 +103,34 @@ export function extractAsk(raw: string): string | null {
   return shorten(candidate, 46)
 }
 
+/**
+ * Full classification used by the ranking layer and the UI safety gates.
+ * Deterministic on purpose: the demo must work with no LLM key.
+ */
+export function classifyAsk(raw: string): AskInsight {
+  const none = (reason: string): AskInsight => ({ ask: null, classification: 'none', sensitivity: 'normal', reason })
+  if (!raw || !raw.trim()) return none('empty')
+  if (SOCIAL.test(raw.trim()) && !REQUEST_MARKER.test(raw) && !DEADLINE_MARKER.test(raw)) {
+    return none('social message, no request')
+  }
+  const ask = askCandidate(raw)
+  if (!ask) return none('no request, question or deadline')
+
+  const possible = HEDGE.test(raw) || HEDGE.test(ask)
+  const sensitive = SENSITIVE.test(raw)
+  return {
+    ask,
+    classification: possible ? 'possible' : 'clear',
+    sensitivity: sensitive ? 'sensitive' : 'normal',
+    reason: [possible ? 'hedged' : 'direct', sensitive ? 'sensitive topic' : 'low stakes'].join(', '),
+  }
+}
+
+/** Backwards-compatible wrapper for callers that only need the ask text. */
+export function extractAsk(raw: string): string | null {
+  return classifyAsk(raw).ask
+}
+
 const URGENT_3 =
   /\b(asap|urgent|tonight|right now|eod|end of day|immediately|blocking|blocker|lose the venue|before\b|by [0-9]{1,2}(:[0-9]{2})?\s*(am|pm)?)\b/i
 const URGENT_2 = /\b(today|tomorrow|this week|friday|monday|tuesday|wednesday|thursday|soon)\b/i
@@ -117,8 +164,8 @@ export function minutesBetween(from: number, to: number): number {
 }
 
 /**
- * Rank open loops: the last message is inbound, the ask is non-trivial,
- * and urgency dominates VIP status which dominates recency.
+ * Rank open loops: last message inbound, a real ask, urgency dominates VIP
+ * status which dominates recency. Channels go to the digest.
  */
 export function buildOpenLoops(threads: Thread[], messages: Message[], now = Date.now()): Loop[] {
   const byThread = new Map<string, Message[]>()
@@ -136,13 +183,18 @@ export function buildOpenLoops(threads: Thread[], messages: Message[], now = Dat
     if (!list.length) continue
     const last = list[list.length - 1]
     if (last.direction !== 'in') continue
-    const ask = extractAsk(last.text)
-    if (!ask) continue
+    const insight = classifyAsk(last.text)
+    if (!insight.ask) continue
 
     const ageMinutes = minutesBetween(last.at, now)
-    const urgency = detectUrgency(urgencyContext(last.text, ask), thread.priority)
+    const urgency = detectUrgency(urgencyContext(last.text, insight.ask), thread.priority)
     const freshness = Math.max(0, 120 - ageMinutes)
-    const score = urgency * 1000 + thread.priority * 100 + freshness + (last.text.includes('?') ? 15 : 0)
+    const score =
+      urgency * 1000 +
+      thread.priority * 100 +
+      (thread.vip ? 200 : 0) +
+      freshness +
+      (last.text.includes('?') ? 15 : 0)
     const snoozed = typeof thread.snoozedUntil === 'number' && thread.snoozedUntil > now
     loops.push({
       id: thread.id,
@@ -150,12 +202,15 @@ export function buildOpenLoops(threads: Thread[], messages: Message[], now = Dat
       who: thread.title,
       where: thread.kind === 'dm' ? 'DM' : thread.kind === 'group' ? 'GROUP' : 'CHANNEL',
       kind: thread.kind,
-      ask,
+      ask: insight.ask,
       lastMessage: last.text,
       ageMinutes,
       urgency,
       score,
-      draft: draftReply({ ask, lastMessage: last.text, who: thread.title }, undefined, thread.priority),
+      draft: defaultDraft({ ask: insight.ask, lastMessage: last.text, who: thread.title }, insight, thread.priority),
+      askClass: insight.classification === 'possible' ? 'possible' : 'clear',
+      sensitivity: insight.sensitivity,
+      vip: Boolean(thread.vip),
       status: snoozed ? 'snoozed' : 'open',
       priority: thread.priority,
     })
@@ -167,7 +222,7 @@ export function buildOpenLoops(threads: Thread[], messages: Message[], now = Dat
 const TEMPLATES: Array<{ test: RegExp; draft: (ask: string, msg: string, priority: 1 | 2 | 3) => string }> = [
   { test: /\b(approve|approval|budget|sign.?off)\b/i, draft: () => 'Approved — go ahead.' },
   {
-    test: /\bsign\b|contract|agreement\b/i,
+    test: /\b(sign|contract|agreement)\b/i,
     draft: (_ask, msg) => {
       const day = msg.match(/\b(mon|tues|wednes|thurs|fri|satur|sun)day\b/i)?.[0]
       return day ? `Got it — I'll review and sign by ${day}.` : "Got it — I'll review and sign today."
@@ -214,7 +269,10 @@ function tidyIntent(intent: string): string {
 }
 
 function capitalizeDays(text: string): string {
-  return text.replace(/\b(mon|tues|wednes|thurs|fri|satur|sun)day\b/gi, m => m.charAt(0).toUpperCase() + m.slice(1).toLowerCase())
+  return text.replace(
+    /\b(mon|tues|wednes|thurs|fri|satur|sun)day\b/gi,
+    m => m.charAt(0).toUpperCase() + m.slice(1).toLowerCase(),
+  )
 }
 
 function extractTime(text: string): string | undefined {
@@ -223,6 +281,9 @@ function extractTime(text: string): string | undefined {
     text.match(/\b([0-9]{1,2}:[0-9]{2}\s*(?:am|pm)?)\b/i)?.[1]
   )
 }
+
+export const UNCERTAIN =
+  /\b(maybe|perhaps|might|possibly|not sure|i think|i guess|could be|if possible|cannot confirm|can'?t confirm)\b/i
 
 /** Deterministic draft used when no LLM is configured, and as a safety net. */
 export function draftReply(
@@ -234,6 +295,13 @@ export function draftReply(
   const rough = intent ? tidyIntent(intent) : ''
 
   if (rough) {
+    // Preserve uncertainty. "maybe Friday" must never become "Yes, Friday works."
+    if (UNCERTAIN.test(rough)) {
+      let sentence = capitalizeDays(rough)
+      sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1)
+      const firstPerson = /^(I|we)\b/.test(sentence)
+      return shorten(firstPerson ? `${sentence}.` : `${sentence} — I'll confirm.`, 140)
+    }
     if (/^(approve|approved|go ahead|do it)\b/i.test(rough)) {
       return 'Approved — go ahead.'
     }
@@ -263,6 +331,43 @@ export function draftReply(
     if (t.test.test(ask) || t.test.test(lastMessage)) return t.draft(ask, lastMessage, priority)
   }
   return "Got it — I'll take care of it today."
+}
+
+/**
+ * Default draft shown before the user speaks. Sensitive topics and hedged
+ * asks get a neutral holding reply so Relay never invents a commitment.
+ */
+export function defaultDraft(
+  input: { ask: string; lastMessage: string; who: string },
+  insight: Pick<AskInsight, 'classification' | 'sensitivity'>,
+  priority: 1 | 2 | 3 = 2,
+): string {
+  if (insight.sensitivity === 'sensitive' || insight.classification === 'possible') {
+    return 'Let me check and get back to you.'
+  }
+  return draftReply(input, undefined, priority)
+}
+
+/** True when the spoken intent itself is hedged; the draft must preserve it. */
+export function intentIsUncertain(intent: string): boolean {
+  return UNCERTAIN.test(intent)
+}
+
+/**
+ * Decide whether an optional LLM may rewrite the draft. Sensitive and possible
+ * asks are deterministic unless the user gave an explicit, non-hedged intent.
+ * This is the server-side guard behind the app's CHECK/MAYBE review screen.
+ */
+export function draftPolicy(
+  loop: Pick<Loop, 'ask' | 'lastMessage' | 'who' | 'askClass' | 'sensitivity' | 'priority'>,
+  intent?: string,
+): { rules: string; allowAi: boolean } {
+  const rules = intent
+    ? draftReply(loop, intent, loop.priority)
+    : defaultDraft(loop, { classification: loop.askClass, sensitivity: loop.sensitivity }, loop.priority)
+  const guarded = loop.sensitivity === 'sensitive' || loop.askClass === 'possible'
+  const allowAi = intent !== undefined ? !guarded || !intentIsUncertain(intent) : !guarded
+  return { rules, allowAi }
 }
 
 export function buildDigest(threads: Thread[], messages: Message[], now = Date.now()): DigestItem[] {

@@ -99,6 +99,21 @@ class LocalStore {
     thread.snoozedUntil = Date.now() + minutes * 60_000
   }
 
+  setVip(threadId: string, vip: boolean): Inbox {
+    const thread = this.threads.find(t => t.id === threadId)
+    if (!thread) throw new ApiError(404, 'loop_not_found')
+    thread.vip = vip
+    if (vip) thread.priority = 3
+    return this.inbox()
+  }
+
+  mute(threadId: string): Inbox {
+    const thread = this.threads.find(t => t.id === threadId)
+    if (!thread) throw new ApiError(404, 'loop_not_found')
+    thread.muted = true
+    return this.inbox()
+  }
+
   digest(): DigestItem[] {
     return buildDigest(this.threads, this.messages, Date.now())
   }
@@ -240,6 +255,30 @@ export class RelayApi {
       method: 'POST',
       body: JSON.stringify({ minutes }),
     })
+    return res.inbox
+  }
+
+  async setVip(threadId: string, vip: boolean): Promise<Inbox> {
+    if (this.offline) return this.localStore().setVip(threadId, vip)
+    const res = await this.request<{ inbox: Inbox }>(`/api/loop/${encodeURIComponent(threadId)}/vip`, {
+      method: 'POST',
+      body: JSON.stringify({ vip }),
+    })
+    return res.inbox
+  }
+
+  async mute(threadId: string): Promise<Inbox> {
+    if (this.offline) return this.localStore().mute(threadId)
+    const res = await this.request<{ inbox: Inbox }>(`/api/loop/${encodeURIComponent(threadId)}/mute`, {
+      method: 'POST',
+      body: JSON.stringify({ muted: true }),
+    })
+    return res.inbox
+  }
+
+  async revokeTelegram(): Promise<Inbox> {
+    if (this.offline) return this.localStore().inbox()
+    const res = await this.request<{ inbox: Inbox }>('/api/session/revoke', { method: 'POST' }, 8_000)
     return res.inbox
   }
 

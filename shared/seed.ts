@@ -27,10 +27,10 @@ export function createSeed(accountId: string, now = Date.now()): SeedData {
   })
 
   const threads: Thread[] = [
-    t('ana', 'Ana Ruiz', 'dm', 3, 2, { tgPeer: '@ana_demo' }),
-    t('marcus', 'Launch team', 'group', 3, 9, { tgPeer: '-100demo' }),
+    t('ana', 'Ana Ruiz', 'dm', 3, 2, { vip: true, tgPeer: '@ana_demo' }),
+    t('marcus', 'Launch team', 'group', 3, 9, { vip: true, tgPeer: '-100demo' }),
     t('priya', 'Priya Shah', 'dm', 2, 26),
-    t('daniel', 'Daniel Okafor', 'dm', 3, 41),
+    t('daniel', 'Daniel Okafor', 'dm', 3, 41, { vip: true }),
     t('sofia', 'Sofia Marin', 'dm', 2, 65),
     t('design', 'Design team', 'group', 1, 55),
     t('defi', 'DeFi Digest', 'channel', 1, 20),

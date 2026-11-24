@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/bolajiev/relay-g2/actions/workflows/ci.yml/badge.svg)](https://github.com/bolajiev/relay-g2/actions/workflows/ci.yml)
 
-[Watch the 46-second demo](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4) · [Pairing page screenshot](docs/pair-page.png) · [Packaged build](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay.ehpk) · [Source](https://github.com/bolajiev/relay-g2)
+[Watch the 50-second demo](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4) · [Pairing page screenshot](docs/pair-page.png) · [Packaged build](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay.ehpk) · [Source](https://github.com/bolajiev/relay-g2)
 
 <img src="docs/relay-demo-poster.png" alt="Relay drafting a reply on Even G2" width="900">
 
@@ -31,6 +31,19 @@ Why this fits the G2 specifically:
 - **Silent by design.** No speaker, no camera, no notifications: a deliberate glance.
 - **Pull, not push.** The platform only shows one app at a time, so Relay is built as a check-in ritual, not a fake alert stream.
 
+### Never invent a commitment
+
+Relay classifies every inbound message before it becomes a loop:
+
+| Classification | Example | Default draft | Send |
+|---|---|---|---|
+| **Clear, low-stakes** | "Can you send the deck before 5?" | ready-to-send template | one tap |
+| **Possible / hedged** | "Maybe we should catch up?" | neutral holding reply | tap opens review |
+| **Sensitive** | money, contracts, budgets, ARR | neutral holding reply | review first; no default commitment |
+| **Conversation** | "Loved the demo today!" | no loop | — |
+
+The user's spoken uncertainty is preserved: **"maybe Friday" → "Maybe Friday — I'll confirm."**, never "Yes, Friday works." A sensitive ask never gets a default "Yes, I'll pay/sign/approve" — the user has to review or speak. VIP senders rank higher and can be muted from the loop menu.
+
 **Track:** 01 · Messaging & News · **Special prize:** Best Telegram integration.
 
 ---
@@ -47,7 +60,11 @@ Why this fits the G2 specifically:
 |---|---|
 | <img src="docs/pair.png" width="420"> | <img src="docs/pair-page.png" width="220"> |
 
-Screenshots are real framebuffer captures from the Even Hub simulator (`npm run test:e2e` regenerates every one).
+| A sensitive ask: **CHECK** | Review before send |
+|---|---|
+| <img src="docs/detail-check.png" width="420"> | <img src="docs/draft-check.png" width="420"> |
+
+Screenshots are real framebuffer captures from the Even Hub simulator (`npm run test:e2e` regenerates the display screenshots).
 
 ---
 
@@ -188,8 +205,11 @@ The server receives raw **16 kHz signed 16-bit mono PCM** from the glasses mic, 
 | `POST` | `/api/loop/:id/draft` | Rewrite a draft with an optional spoken intent |
 | `POST` | `/api/loop/:id/send` | Send via Telegram (or demo store), close loop |
 | `POST` | `/api/loop/:id/snooze` | Hide for N minutes, count in `LATER` |
+| `POST` | `/api/loop/:id/vip` | Promote a sender in the ranking |
 | `POST` | `/api/loop/:id/mute` | Drop a thread from the brief |
 | `GET` | `/api/digest` | Channel headlines, no interruptions |
+| `GET` | `/api/stats` | Cleared loops, sensitive clears, open→send latency |
+| `POST` | `/api/session/revoke` | Disconnect Telegram, delete the session, restore demo |
 | `POST` | `/api/transcribe` | PCM → text (or explicit demo utterance) |
 | `POST` | `/api/pair/new` | 6-digit code, 10-minute TTL |
 | `GET` | `/api/pair/:code` | Poll pairing status |
@@ -206,35 +226,53 @@ Auth is `Authorization: Bearer <device token>`; only the SHA-256 hash is stored.
 
 ## Safety and privacy
 
+- **No default commitments.** Clear/possible/sensitive classification (above); sensitive and hedged asks get a neutral holding reply and a review step. The user's spoken uncertainty is preserved. There is no auto-send.
 - **No money, no trading, no financial advice.** The demo data is fictional.
 - **No secrets in the client.** The `.ehpk` contains no keys; all provider calls are server-side.
+- **Explicit consent.** The phone pairing page requires a checkbox acknowledging that Relay reads recent chats and sends only approved replies.
+- **Revocation on the glasses.** On the connected pair screen, **hold to revoke**: the Telegram session is disconnected and deleted, and the fictional demo is restored. `DELETE /api/account` removes everything; `GET /api/export` exports it.
+- **Per-chat control.** Mute any thread from its menu; VIP promotes a sender. A full per-chat read allowlist is the next privacy step (see limitations).
 - **Minimal reads.** Only the 12 most recent dialogs and 7 messages each are snapshotted; content lives in a local JSON store for the demo.
-- **Sessions encrypted at rest** with AES-256-GCM (`SESSION_KEY`); device tokens are hashed.
+- **Sessions encrypted at rest** with AES-256-GCM (`SESSION_KEY`); device tokens are hashed. Login codes and session strings are never logged (the request log contains method/path/status only).
 - **Pair codes** are 6 digits, single-use, 10-minute TTL, rate-limited per IP.
-- **Delete everything** with `DELETE /api/account`; `GET /api/export` gives the user their data.
 - **Respect the room.** Message content is only rendered on the user's own glasses; no analytics, no third-party trackers.
+
+---
+
+## Metrics
+
+`npm run metrics` creates a demo account, opens Ana's loop, waits 800 ms, drafts from a spoken intent, sends, and reads `/api/stats`.
+
+```
+measurement: openedToSentMs 1206 · draft "Yes — I'll send it by 4:30." · remaining 4
+stats:       cleared 1 · sensitiveCleared 0 · avgResolveMs 1108 · openLoops 4
+```
+
+The metric that matters is **time to clear a loop**, not messages read. The server starts the clock when the loop is opened (`viewedAt`) and records `resolveMs` when the reply is sent; sensitive clears are counted separately. The sample includes a deliberate 800 ms pause and excludes the user's speaking time. Next: a "not an ask" feedback action to measure false positives.
 
 ---
 
 ## Tests and evidence
 
 ```bash
-npm test          # 33 unit + integration tests
+npm test          # 47 unit + integration tests
 npm run test:e2e  # real simulator journey + screenshots
 ```
 
 The suite covers:
 
-- ask extraction, urgency, ranking, drafts, digest, WAV wrapper (`server/test/domain.test.ts`)
-- the full HTTP flow including auth, validation, pairing, snooze, reset, export, delete (`server/test/api.test.ts`)
-- every screen's container contract, canvas bounds, overlaps, text fit and capture count (`app/test/views.test.ts`)
+- ask extraction, **clear/possible/sensitive classification**, neutral defaults, uncertainty preservation, urgency, ranking, drafts, digest, WAV wrapper (`server/test/domain.test.ts`)
+- the full HTTP flow including auth, validation, pairing, **VIP/mute**, **session revocation**, **resolve-time stats**, reset, export, delete (`server/test/api.test.ts`)
+- every screen's container contract, canvas bounds, overlaps, text fit, capture count, and the **CHECK/MAYBE review gates** (`app/test/views.test.ts`)
 - the LLM and STT adapters against fake OpenAI-compatible servers, including WAV upload and response cleaning (`server/test/adapters.test.ts`)
+- the **Telegram MTProto adapter** against a fake GramJS client: login, snapshot mapping, send, and 2FA without re-sending the code (`server/test/telegram.test.ts`). Live Telegram still needs a test account — see `docs/LIVE_TELEGRAM.md`.
 
-`npm run test:e2e` boots the backend, preview, and simulator, then drives tap → detail → long-press → release → draft → send → digest → pair. It asserts app log markers, non-blank framebuffers, distinct screen hashes, and **no console errors**. Latest run:
+`npm run test:e2e` boots the backend, preview, and simulator, then drives tap → detail → long-press → release → draft → send → digest → pair, plus a **sensitive-loop gate**: tapping the budget ask must open review and must **not** emit a send. It asserts app log markers, non-blank framebuffers, distinct screen hashes, and **no console errors**. Latest run:
 
 ```
 PASS · full journey
   brief lit=6280 · detail lit=5644 · draft lit=3467 · sent lit=3449
+  sensitive tap → review opened, no send
   pair code issued · screenshots in docs/
 ```
 
@@ -246,7 +284,7 @@ Everything in this repository was written on **Nov 23–24, 2026**, except the p
 
 Pre-existing: Even Hub SDK `0.0.16`, CLI `0.2.0`, simulator `0.9.5`; the minimal template pattern; Vite, Express, GramJS, Telegram/OpenAI APIs.
 
-Built: the product thesis, all 8 screens, the ranking/extraction/drafting domain, the backend, pairing, the Telegram/LLM/STT adapters, the demo seed, the offline fallback, the tests, the E2E harness, the screenshots, the 46-second demo video, and the packaged `.ehpk`.
+Built: the product thesis, all 8 screens, the ranking/extraction/drafting domain, the backend, pairing, the Telegram/LLM/STT adapters, the demo seed, the offline fallback, the tests, the E2E harness, the screenshots, the 50-second demo video, and the packaged `.ehpk`.
 
 ---
 
@@ -286,6 +324,8 @@ PITCH.md             3-minute pitch and Q&A
 
 ## Limitations / next
 
+- **Live Telegram auth/send has not been exercised in this environment** (no API credentials or phone). Demo mode is the tested path; the read-only live checklist is in `docs/LIVE_TELEGRAM.md`.
+- **Per-chat read allowlist:** mute and VIP are implemented, but Relay still snapshots the 12 most recent dialogs rather than asking per chat.
 - Simulator ≠ hardware: font, greyscale and image pacing need a G2 check.
 - Android may suspend the WebView; the app persists its token and re-derives the brief on relaunch, but it has not been beta-tested on a physical phone yet.
 - Telegram entity resolution scans up to 100 dialogs on send; a production build should cache access hashes.

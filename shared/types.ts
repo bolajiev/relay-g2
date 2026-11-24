@@ -1,4 +1,6 @@
 export type AccountKind = 'demo' | 'telegram'
+export type AskClass = 'clear' | 'possible'
+export type Sensitivity = 'normal' | 'sensitive'
 export type ThreadKind = 'dm' | 'group' | 'channel'
 export type Direction = 'in' | 'out'
 export type ScreenName =
@@ -19,10 +21,18 @@ export interface Account {
   username?: string
   createdAt: number
   styleSamples: string[]
+  stats?: AccountStats
   tgUserId?: string
   tgName?: string
   /** AES-GCM encrypted GramJS StringSession. Never sent to the client. */
   tgSessionEnc?: string
+}
+
+export interface AccountStats {
+  cleared: number
+  sensitiveCleared: number
+  totalResolveMs: number
+  resolveSamples: number
 }
 
 export interface Thread {
@@ -33,7 +43,10 @@ export interface Thread {
   /** 3 = VIP / direct ask, 2 = regular, 1 = low signal */
   priority: 1 | 2 | 3
   muted: boolean
+  vip?: boolean
   snoozedUntil?: number
+  /** Set when the user opens the loop; used for resolve-time metrics. */
+  viewedAt?: number
   tgPeer?: string
   lastMessageAt: number
 }
@@ -60,6 +73,9 @@ export interface Loop {
   urgency: 1 | 2 | 3
   score: number
   draft: string
+  askClass: AskClass
+  sensitivity: Sensitivity
+  vip: boolean
   status: 'open' | 'snoozed'
   priority: 1 | 2 | 3
 }
