@@ -139,6 +139,18 @@ PUBLIC_URL=http://localhost:8787
 
 The bot saw `/start` + *“Can you send me the deck by 5?”*; Relay synced 1 thread / 2 messages, rendered `BJ — Send deck by 5`, sent **“Yes — I'll send it by 5.”** through `sendMessage` (`RELAY SENT BJ remaining=0`), then **Disconnect Telegram** removed the stored token (`botTokenEnc` 1 → 0) and restored the demo. Full log: `docs/LIVE_TELEGRAM.md`.
 
+### Hardware readiness
+
+The simulator is the **official submission path** — the rules say no glasses are
+needed. The packaged `.ehpk` also runs without a backend: it falls back to
+`OFFLINE DEMO` with the fictional inbox. That exact fallback was tested:
+
+<img src="docs/offline-demo.png" alt="Relay offline demo on the glasses" width="360">
+
+If you have a G2, use `docs/HARDWARE_TEST.md` for the install, gesture, lock/relaunch,
+microphone, and beta checklist. It includes the offline smoke test and the
+LAN-backed live build (`VITE_API_URL=...`, whitelist, repack).
+
 ### Bot mode (live Bot API, no phone code)
 
 For team/community bots — or when the Telegram app's login code is inaccessible — Relay can connect a **Bot API** token instead:
@@ -343,8 +355,9 @@ PITCH.md             3-minute pitch and Q&A
 
 ## Limitations / next
 
-- **MTProto DM live login** is pending an accessible app session/code. Telegram returns `SentCodeTypeApp` with no SMS fallback for the test number; the adapter is mocked-tested. **Bot API mode is live-verified** for bot/community inboxes (not personal DMs). Checklist: `docs/LIVE_TELEGRAM.md`.
+- **MTProto DM live login** is pending an accessible app session/code. Telegram returns `SentCodeTypeApp` with no SMS fallback for the test number; the adapter is mocked-tested. To force SMS, log out every Telegram app session for the number (or use a second number with no active app); checklist: `docs/LIVE_TELEGRAM.md`. **Bot API mode is live-verified** for bot/community inboxes (not personal DMs).
 - **Per-chat read allowlist:** mute and VIP are implemented, but Relay still snapshots the 12 most recent dialogs rather than asking per chat.
+- **Physical G2/beta test:** not run here (no hardware). The simulator is accepted for submission; the offline `.ehpk` fallback and `docs/HARDWARE_TEST.md` cover the first hardware pass.
 - Simulator ≠ hardware: font, greyscale and image pacing need a G2 check.
 - Android may suspend the WebView; the app persists its token and re-derives the brief on relaunch, but it has not been beta-tested on a physical phone yet.
 - Telegram entity resolution scans up to 100 dialogs on send; a production build should cache access hashes.
