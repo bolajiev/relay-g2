@@ -13,6 +13,7 @@ export interface Config {
   llm: { enabled: boolean; baseUrl: string; apiKey: string; model: string }
   stt: { enabled: boolean; baseUrl: string; apiKey: string; model: string; localBin: string }
   demoVoice: boolean
+  botApiBase: string
 }
 
 function bool(value: string | undefined, fallback = false): boolean {
@@ -64,5 +65,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       localBin: env.WHISPER_BIN ?? '',
     },
     demoVoice: bool(env.DEMO_VOICE, true),
+    botApiBase: (env.BOT_API_BASE ?? 'https://api.telegram.org').replace(/\/$/, ''),
   }
 }

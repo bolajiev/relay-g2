@@ -127,8 +127,8 @@ export class Store {
       loops: all.filter(l => l.status === 'open'),
       snoozed: all.filter(l => l.status === 'snoozed').length,
       channels: countChannels(threads),
-      demo: account?.kind !== 'telegram',
-      connected: Boolean(account?.tgSessionEnc),
+      demo: account?.kind === 'demo',
+      connected: Boolean(account?.tgSessionEnc || account?.botTokenEnc),
     }
   }
 
@@ -234,6 +234,9 @@ export class Store {
     delete account.tgSessionEnc
     delete account.tgUserId
     delete account.tgName
+    delete account.botTokenEnc
+    delete account.botId
+    delete account.botName
     this.save()
     return true
   }
@@ -261,6 +264,20 @@ export class Store {
     return true
   }
 
+  setBot(accountId: string, input: { tokenEnc: string; botId: string; botName: string }): boolean {
+    const account = this.account(accountId)
+    if (!account) return false
+    account.kind = 'bot'
+    account.botTokenEnc = input.tokenEnc
+    account.botId = input.botId
+    account.botName = input.botName
+    delete account.tgSessionEnc
+    delete account.tgUserId
+    delete account.tgName
+    this.save()
+    return true
+  }
+
   setTelegram(
     accountId: string,
     input: { sessionEnc: string; tgUserId: string; tgName: string; username?: string; styleSamples?: string[] },
@@ -268,6 +285,9 @@ export class Store {
     const account = this.account(accountId)
     if (!account) return false
     account.kind = 'telegram'
+    delete account.botTokenEnc
+    delete account.botId
+    delete account.botName
     account.tgSessionEnc = input.sessionEnc
     account.tgUserId = input.tgUserId
     account.tgName = input.tgName

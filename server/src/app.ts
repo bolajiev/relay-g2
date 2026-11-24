@@ -9,6 +9,7 @@ import type { Store } from './store'
 import { draftWithAI } from './services/ai'
 import { transcribe } from './services/stt'
 import { TelegramService } from './services/telegram'
+import { BotService } from './services/bot'
 import { pairPage } from './pages/pair'
 
 export interface AppDeps {
@@ -53,6 +54,7 @@ export function createApp(deps: AppDeps): express.Express {
   const { store, config } = deps
   const now = deps.now ?? (() => Date.now())
   const telegram = deps.telegram ?? new TelegramService(config)
+  const botService = new BotService(config)
   const app = express()
 
   app.set('trust proxy', true)
@@ -192,8 +194,26 @@ export function createApp(deps: AppDeps): express.Express {
       return
     }
 
-    let via: 'demo' | 'telegram' = 'demo'
-    if (account.tgSessionEnc) {
+    let via: 'demo' | 'telegram' | 'bot' = 'demo'
+    if (account.botTokenEnc) {
+      const thread = store.threads(account.id).find(t => t.id === req.params.id)
+      if (!thread?.botChatId) {
+        res.status(409).json({ error: 'missing_bot_chat' })
+        return
+      }
+      const token = decryptSecret(account.botTokenEnc, config.sessionKey)
+      try {
+        await botService.send(token, thread.botChatId, body)
+        via = 'bot'
+      } catch (err) {
+        if (err instanceof ServiceError) {
+          res.status(err.status).json({ error: err.code, message: err.message })
+          return
+        }
+        res.status(502).json({ error: 'bot_send_failed', message: err instanceof Error ? err.message : 'send failed' })
+        return
+      }
+    } else if (account.tgSessionEnc) {
       const plain = decryptSecret(account.tgSessionEnc, config.sessionKey)
       const peer = store.threads(account.id).find(t => t.id === req.params.id)?.tgPeer
       if (!peer) {
@@ -359,6 +379,52 @@ export function createApp(deps: AppDeps): express.Express {
     })
   })
 
+  app.post('/api/pair/:code/bot', async (req, res) => {
+    if (!pairStartLimit.allow(clientKey(req))) {
+      res.status(429).json({ error: 'rate_limited', message: 'Too many attempts. Wait a minute.' })
+      return
+    }
+    const rec = store.getPair(req.params.code, now())
+    if (!rec) {
+      res.status(410).json({ error: 'pair_expired' })
+      return
+    }
+    const token = text(req.body?.token, 200)
+    if (!token) {
+      res.status(400).json({ error: 'bad_bot_token' })
+      return
+    }
+    try {
+      const me = await botService.me(token)
+      const snapshot = await botService.snapshot(token, rec.accountId)
+      if (!snapshot.threads.length) {
+        res.status(409).json({
+          error: 'bot_no_messages',
+          message: 'Send the bot a message first (or add it to a test group and post there), then connect again.',
+        })
+        return
+      }
+      store.setBot(rec.accountId, {
+        tokenEnc: encryptSecret(token, config.sessionKey),
+        botId: String(me.id),
+        botName: me.username ?? me.first_name ?? 'Telegram bot',
+      })
+      store.replaceSnapshot(rec.accountId, snapshot.threads, snapshot.messages)
+      store.markPairConnected(rec.code, now())
+      res.json({
+        status: 'connected',
+        bot: { id: me.id, name: me.first_name ?? me.username ?? 'Telegram bot', username: me.username ?? null },
+        synced: { threads: snapshot.threads.length, messages: snapshot.messages.length },
+      })
+    } catch (err) {
+      if (err instanceof ServiceError) {
+        res.status(err.status).json({ error: err.code, message: err.message })
+        return
+      }
+      throw err
+    }
+  })
+
   app.post('/api/pair/:code/telegram/start', async (req, res) => {
     if (!pairStartLimit.allow(clientKey(req))) {
       res.status(429).json({ error: 'rate_limited', message: 'Too many attempts. Wait a minute.' })
@@ -375,7 +441,7 @@ export function createApp(deps: AppDeps): express.Express {
       return
     }
     try {
-      const result = await telegram.startLogin(rec.code, phone)
+      const result = await telegram.startLogin(rec.code, phone, Boolean(req.body?.forceSMS))
       res.json({ ok: true, ...result })
     } catch (err) {
       if (err instanceof ServiceError) {

@@ -1,4 +1,4 @@
-export type AccountKind = 'demo' | 'telegram'
+export type AccountKind = 'demo' | 'telegram' | 'bot'
 export type AskClass = 'clear' | 'possible'
 export type Sensitivity = 'normal' | 'sensitive'
 export type ThreadKind = 'dm' | 'group' | 'channel'
@@ -26,6 +26,10 @@ export interface Account {
   tgName?: string
   /** AES-GCM encrypted GramJS StringSession. Never sent to the client. */
   tgSessionEnc?: string
+  /** AES-GCM encrypted Bot API token for bot-inbox mode. */
+  botTokenEnc?: string
+  botId?: string
+  botName?: string
 }
 
 export interface AccountStats {
@@ -48,6 +52,8 @@ export interface Thread {
   /** Set when the user opens the loop; used for resolve-time metrics. */
   viewedAt?: number
   tgPeer?: string
+  /** Bot API chat id, used by bot-inbox mode. */
+  botChatId?: string
   lastMessageAt: number
 }
 

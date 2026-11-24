@@ -206,6 +206,90 @@ test('revoking a session deletes the Telegram link and restores the demo', async
   assert.equal(store.account(account.id)?.tgSessionEnc, undefined)
 })
 
+test('bot pairing attaches a Bot API inbox, sends through it and revokes', async t => {
+  const sent: Array<{ chatId: number; text: string }> = []
+  const botApi = http.createServer((req, res) => {
+    const chunks: Buffer[] = []
+    req.on('data', c => chunks.push(c as Buffer))
+    req.on('end', () => {
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as Record<string, unknown>
+      const method = req.url?.split('/').pop()
+      const ok = (result: unknown) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, result }))
+      }
+      if (method === 'getMe') ok({ id: 42, is_bot: true, first_name: 'Relay Test', username: 'relay_test_bot' })
+      else if (method === 'getUpdates') {
+        ok([
+          {
+            update_id: 1,
+            message: {
+              message_id: 1,
+              date: 1_700_000_000,
+              text: 'Can you send me the deck by 5?',
+              chat: { id: 99, type: 'private', first_name: 'Ana' },
+              from: { id: 7, first_name: 'Ana' },
+            },
+          },
+        ])
+      } else if (method === 'sendMessage') {
+        sent.push({ chatId: Number(body.chat_id), text: String(body.text) })
+        ok({ message_id: 2, date: 1_800_000_010, chat: { id: 99 }, text: body.text })
+      } else {
+        res.writeHead(404).end()
+      }
+    })
+  })
+  botApi.listen(0, '127.0.0.1')
+  await once(botApi, 'listening')
+  const botAddress = botApi.address()
+  if (!botAddress || typeof botAddress === 'string') throw new Error('no bot port')
+  t.after(() => botApi.close())
+
+  const { server, base, store } = await boot({ BOT_API_BASE: `http://127.0.0.1:${botAddress.port}` })
+  t.after(() => server.close())
+
+  const session = await call(base, '/api/session/demo', { method: 'POST' })
+  const token = session.json.token
+  const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+  const pair = await call(base, '/api/pair/new', { method: 'POST', headers: auth })
+  const code = pair.json.code
+
+  const attach = await call(base, `/api/pair/${code}/bot`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: '123:test' }),
+  })
+  assert.equal(attach.status, 200)
+  assert.equal(attach.json.status, 'connected')
+  assert.equal(attach.json.synced.threads, 1)
+
+  const inbox = await call(base, '/api/inbox', { headers: auth })
+  assert.equal(inbox.json.demo, false)
+  assert.equal(inbox.json.connected, true)
+  assert.equal(inbox.json.loops.length, 1)
+  const loop = inbox.json.loops[0]
+  assert.equal(loop.who, 'Ana')
+  assert.match(loop.ask, /Send deck by 5/)
+
+  const send = await call(base, `/api/loop/${loop.threadId}/send`, {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ text: 'Yes — sending it by 5.' }),
+  })
+  assert.equal(send.status, 200)
+  assert.equal(send.json.via, 'bot')
+  assert.equal(send.json.remaining, 0)
+  assert.deepEqual(sent, [{ chatId: 99, text: 'Yes — sending it by 5.' }])
+
+  const revoke = await call(base, '/api/session/revoke', { method: 'POST', headers: auth })
+  assert.equal(revoke.status, 200)
+  assert.equal(revoke.json.inbox.demo, true)
+  const account = store.accountByToken(token)
+  assert.ok(account)
+  assert.equal(account.botTokenEnc, undefined)
+})
+
 test('sensitive and hedged drafts never reach the LLM', async t => {
   const llmCalls: string[] = []
   const llmServer = http.createServer((req, res) => {

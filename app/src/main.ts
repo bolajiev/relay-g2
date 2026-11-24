@@ -561,6 +561,7 @@ async function handleMenu(id: number): Promise<void> {
   else if (id === 3) await refresh()
   else if (id === 4) await toggleVip()
   else if (id === 5) await muteCurrent()
+  else if (id === 6) await revokeTelegram()
 }
 
 let lastLongPressAt = 0

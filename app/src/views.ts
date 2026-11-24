@@ -84,6 +84,11 @@ export const SCREEN_MENU: MenuEntry[] = [
   { id: 3, name: 'Refresh' },
 ]
 
+export function menuFor(state: ViewState): MenuEntry[] {
+  if (state.demo || state.offline) return SCREEN_MENU
+  return [...SCREEN_MENU, { id: 6, name: 'Disconnect Telegram' }]
+}
+
 function capture(): TextBox {
   return { id: 1, name: 'capture', x: 0, y: 0, w: W, h: H, content: ' ', color: 4, capture: true }
 }
@@ -142,7 +147,7 @@ export function briefView(state: ViewState): View {
       }),
     )
     boxes.push(footerText)
-    return { boxes, menu: SCREEN_MENU }
+    return { boxes, menu: menuFor(state) }
   }
 
   const items = state.loops.slice(0, 4).map(loop =>
@@ -164,7 +169,7 @@ export function briefView(state: ViewState): View {
       pad: 2,
       capture: true,
     },
-    menu: SCREEN_MENU,
+    menu: menuFor(state),
   }
 }
 
@@ -174,7 +179,7 @@ export function detailView(state: ViewState): View {
   if (!loop) {
     boxes.push(header('RELAY · NOTHING WAITING'))
     boxes.push(footer(state, 'DOUBLE back'))
-    return { boxes, menu: SCREEN_MENU }
+    return { boxes, menu: menuFor(state) }
   }
   const where = loop.kind === 'dm' ? 'DM' : loop.kind === 'group' ? 'GROUP' : 'CHANNEL'
   const safety = loop.sensitivity === 'sensitive' ? ' · CHECK' : loop.askClass === 'possible' ? ' · MAYBE' : ''
@@ -220,7 +225,7 @@ export function detailView(state: ViewState): View {
   const detailMenu = [
     { id: 4, name: loop.vip ? 'VIP: on' : 'VIP: off' },
     { id: 5, name: 'Mute sender' },
-    ...SCREEN_MENU,
+    ...menuFor(state),
   ]
   return { boxes, menu: detailMenu }
 }
@@ -282,7 +287,7 @@ export function draftView(state: ViewState): View {
   if (!loop) {
     boxes.push(header('RELAY · NO DRAFT'))
     boxes.push(footer(state, 'DOUBLE back'))
-    return { boxes, menu: SCREEN_MENU }
+    return { boxes, menu: menuFor(state) }
   }
   const provider = state.draftProvider === 'llm' ? ' · AI' : state.draftProvider === 'demo' ? ' · VOICE DEMO' : ''
   const safety = loop.sensitivity === 'sensitive' ? ' · CHECK' : loop.askClass === 'possible' ? ' · MAYBE' : ''
@@ -304,7 +309,7 @@ export function draftView(state: ViewState): View {
     }),
   )
   boxes.push(footer(state, 'TAP send · HOLD redo · SWIPE later'))
-  return { boxes, menu: SCREEN_MENU }
+  return { boxes, menu: menuFor(state) }
 }
 
 export function sentView(state: ViewState): View {
@@ -341,7 +346,7 @@ export function sentView(state: ViewState): View {
     }),
   )
   boxes.push(footer(state, 'TAP next now · DOUBLE exit'))
-  return { boxes, menu: SCREEN_MENU }
+  return { boxes, menu: menuFor(state) }
 }
 
 export function digestView(state: ViewState): View {
@@ -367,7 +372,7 @@ export function digestView(state: ViewState): View {
       }),
     )
     boxes.push(footerBox)
-    return { boxes, menu: SCREEN_MENU }
+    return { boxes, menu: menuFor(state) }
   }
   boxes.push(footerBox)
   const items = state.digest.slice(0, 4).map(i => shorten(`${i.channel} · ${ageLabel(i.ageMinutes)} — ${i.text}`, LIST_ITEM_MAX))
@@ -386,7 +391,7 @@ export function digestView(state: ViewState): View {
       pad: 2,
       capture: true,
     },
-    menu: SCREEN_MENU,
+    menu: menuFor(state),
   }
 }
 
@@ -443,7 +448,7 @@ export function pairView(state: ViewState): View {
     }),
   )
   boxes.push(footer(state, connected ? 'TAP continue · HOLD revoke' : 'TAP refresh · DOUBLE back'))
-  return { boxes, menu: connected ? SCREEN_MENU : [] }
+  return { boxes, menu: connected ? menuFor(state) : [] }
 }
 
 export function errorView(state: ViewState): View {

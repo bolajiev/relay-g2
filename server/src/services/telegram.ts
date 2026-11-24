@@ -9,7 +9,7 @@ export type AnyClient = {
   connect: () => Promise<void>
   disconnect: () => Promise<void>
   invoke: (req: unknown) => Promise<unknown>
-  sendCode: (creds: { apiId: number; apiHash: string }, phone: string) => Promise<{ phoneCodeHash: string; isCodeViaApp: boolean }>
+  sendCode: (creds: { apiId: number; apiHash: string }, phone: string, forceSMS?: boolean) => Promise<{ phoneCodeHash: string; isCodeViaApp: boolean }>
   signInWithPassword: (
     creds: { apiId: number; apiHash: string },
     params: { password: () => Promise<string>; onError: () => Promise<boolean> },
@@ -65,7 +65,8 @@ export interface TelegramSnapshot {
     kind: 'dm' | 'group' | 'channel'
     priority: 1 | 2 | 3
     muted: boolean
-    tgPeer: string
+    tgPeer?: string
+    botChatId?: string
     lastMessageAt: number
   }>
   messages: Array<{
@@ -174,7 +175,7 @@ export class TelegramService {
     }
   }
 
-  async startLogin(code: string, phoneRaw: string): Promise<{ isCodeViaApp: boolean }> {
+  async startLogin(code: string, phoneRaw: string, forceSMS = false): Promise<{ isCodeViaApp: boolean }> {
     if (!this.enabled) throw new ServiceError(503, 'telegram_not_configured', 'Set TG_API_ID and TG_API_HASH.')
     this.sweep()
     const phone = phoneRaw.replace(/[\s()-]/g, '')
@@ -187,6 +188,7 @@ export class TelegramService {
       const { phoneCodeHash, isCodeViaApp } = await client.sendCode(
         { apiId: this.config.telegram.apiId, apiHash: this.config.telegram.apiHash },
         phone,
+        forceSMS,
       )
       this.pending.set(code, { client, phone, phoneCodeHash, needsPassword: false, createdAt: Date.now() })
       return { isCodeViaApp }

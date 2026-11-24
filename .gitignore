@@ -5,3 +5,7 @@ server/data/
 .env
 .DS_Store
 docs/frames/
+
+# local screenshots
+Screenshot_*.jpg
+Screenshot_*.png

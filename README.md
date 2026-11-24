@@ -129,7 +129,25 @@ PUBLIC_URL=http://localhost:8787
 5. On the phone: open `PUBLIC_URL/pair`, enter the code, then your phone number, the Telegram login code, and 2FA if enabled.
 6. Relay encrypts the resulting `StringSession` with AES-256-GCM, syncs the 12 most recent dialogs (7 messages each), and replaces the demo inbox. Replies go back through `messages.sendMessage`; read receipts are best-effort.
 
-> The MTProto adapter and pairing flow are implemented end to end, but this environment had no Telegram API credentials, so the **tested** path is demo mode. Use a test account and respect Telegram's terms and rate limits.
+> **Live status (Nov 24, 2026):** the **Bot API mode is live-verified** — a real bot (`@RelayTest2026bot`) was paired, a real request was rendered as a loop, a reply was sent, and the token was revoked (evidence below). The **MTProto DM** adapter is implemented and covered by mocked GramJS tests, but live DM login is still pending: Telegram returned `auth.SentCodeTypeApp` with `nextType: null` for the test number, so the code only goes to an existing app session and SMS is unavailable. Use a test account and respect Telegram's terms and rate limits.
+
+### Live Bot API proof
+
+| Live bot inbox | Real send | Revoked → demo restored |
+|---|---|---|
+| <img src="docs/live-bot-brief.png" width="300"> | <img src="docs/live-bot-sent.png" width="300"> | <img src="docs/live-bot-revoked.png" width="300"> |
+
+The bot saw `/start` + *“Can you send me the deck by 5?”*; Relay synced 1 thread / 2 messages, rendered `BJ — Send deck by 5`, sent **“Yes — I'll send it by 5.”** through `sendMessage` (`RELAY SENT BJ remaining=0`), then **Disconnect Telegram** removed the stored token (`botTokenEnc` 1 → 0) and restored the demo. Full log: `docs/LIVE_TELEGRAM.md`.
+
+### Bot mode (live Bot API, no phone code)
+
+For team/community bots — or when the Telegram app's login code is inaccessible — Relay can connect a **Bot API** token instead:
+
+1. Create a throwaway bot with **@BotFather** (`/newbot`), send it a message such as *"Can you send me the deck by 5?"*.
+2. On `/pair`, choose **Use a bot token instead**, paste the token, and connect.
+3. The bot's visible chats appear as loops; replies are sent through `sendMessage`.
+
+Bots only see messages addressed to them / groups they can access — **never personal DMs**. This is a real live read/write path, but a weaker one than the MTProto user session. Pairing API: `POST /api/pair/:code/bot` with `{token}`.
 
 ### Phone build
 
@@ -215,6 +233,7 @@ The server receives raw **16 kHz signed 16-bit mono PCM** from the glasses mic, 
 | `GET` | `/api/pair/:code` | Poll pairing status |
 | `POST` | `/api/pair/:code/telegram/start` | Send Telegram login code |
 | `POST` | `/api/pair/:code/telegram/verify` | Verify code/2FA, attach session |
+| `POST` | `/api/pair/:code/bot` | Attach a Bot API token and sync its visible chats |
 | `GET` | `/api/export` | Export the account's threads/messages |
 | `DELETE` | `/api/account` | Delete account, tokens, messages, sessions |
 | `GET` | `/health` | Feature flags + store stats |
@@ -255,7 +274,7 @@ The metric that matters is **time to clear a loop**, not messages read. The serv
 ## Tests and evidence
 
 ```bash
-npm test          # 47 unit + integration tests
+npm test          # 51 unit + integration tests
 npm run test:e2e  # real simulator journey + screenshots
 ```
 
@@ -265,7 +284,8 @@ The suite covers:
 - the full HTTP flow including auth, validation, pairing, **VIP/mute**, **session revocation**, **resolve-time stats**, reset, export, delete (`server/test/api.test.ts`)
 - every screen's container contract, canvas bounds, overlaps, text fit, capture count, and the **CHECK/MAYBE review gates** (`app/test/views.test.ts`)
 - the LLM and STT adapters against fake OpenAI-compatible servers, including WAV upload and response cleaning (`server/test/adapters.test.ts`)
-- the **Telegram MTProto adapter** against a fake GramJS client: login, snapshot mapping, send, and 2FA without re-sending the code (`server/test/telegram.test.ts`). Live Telegram still needs a test account — see `docs/LIVE_TELEGRAM.md`.
+- the **Telegram MTProto adapter** against a fake GramJS client: login, snapshot mapping, send, and 2FA without re-sending the code (`server/test/telegram.test.ts`)
+- the **Telegram Bot API adapter** against a fake Bot API server: update mapping, private-chat loop extraction, send, pairing, and revoke (`server/test/bot.test.ts`, `server/test/api.test.ts`). Live MTProto DMs still need an accessible app code — see `docs/LIVE_TELEGRAM.md`.
 
 `npm run test:e2e` boots the backend, preview, and simulator, then drives tap → detail → long-press → release → draft → send → digest → pair, plus a **sensitive-loop gate**: tapping the budget ask must open review and must **not** emit a send. It asserts app log markers, non-blank framebuffers, distinct screen hashes, and **no console errors**. Latest run:
 
@@ -283,7 +303,7 @@ Everything in this repository was written on **Nov 23–24, 2026**, except the p
 
 Pre-existing: Even Hub SDK `0.0.16`, CLI `0.2.0`, simulator `0.9.5`; the minimal template pattern; Vite, Express, GramJS, Telegram/OpenAI APIs.
 
-Built: the product thesis, all 8 screens, the ranking/extraction/drafting domain, the backend, pairing, the Telegram/LLM/STT adapters, the demo seed, the offline fallback, the tests, the E2E harness, the screenshots, the 50-second demo video, and the packaged `.ehpk`.
+Built: the product thesis, all 8 screens, the ranking/extraction/drafting domain, the backend, pairing, the Telegram MTProto/Bot API/LLM/STT adapters, the demo seed, the offline fallback, the tests, the E2E harness, the live bot proof, the screenshots, the 50-second demo video, and the packaged `.ehpk`.
 
 ---
 
@@ -309,7 +329,7 @@ app/                 Even Hub plugin (Vite + TypeScript + SDK)
   app.json           manifest (network + g2-microphone)
   relay.ehpk         packaged build
 server/              Express backend
-  src/services/      Telegram MTProto, LLM, STT
+  src/services/      Telegram MTProto + Bot API, LLM, STT
   src/pages/pair.ts  phone pairing page
   src/store.ts       repository, pairing, tokens
   test/              domain + HTTP integration tests
@@ -323,7 +343,7 @@ PITCH.md             3-minute pitch and Q&A
 
 ## Limitations / next
 
-- **Live Telegram auth/send has not been exercised in this environment** (no API credentials or phone). Demo mode is the tested path; the read-only live checklist is in `docs/LIVE_TELEGRAM.md`.
+- **MTProto DM live login** is pending an accessible app session/code. Telegram returns `SentCodeTypeApp` with no SMS fallback for the test number; the adapter is mocked-tested. **Bot API mode is live-verified** for bot/community inboxes (not personal DMs). Checklist: `docs/LIVE_TELEGRAM.md`.
 - **Per-chat read allowlist:** mute and VIP are implemented, but Relay still snapshots the 12 most recent dialogs rather than asking per chat.
 - Simulator ≠ hardware: font, greyscale and image pacing need a G2 check.
 - Android may suspend the WebView; the app persists its token and re-derives the brief on relaunch, but it has not been beta-tested on a physical phone yet.

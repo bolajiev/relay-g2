@@ -60,8 +60,10 @@ export function pairPage({ code, telegramAvailable }: PairPageOptions): string {
     <label for="phone">TELEGRAM PHONE NUMBER</label>
     <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+971 50 123 4567">
     <label class="consent"><input type="checkbox" id="consent"> I understand Relay reads my most recent Telegram chats and sends a reply only when I tap send. I can disconnect and delete the session from the glasses at any time.</label>
+    <label class="consent"><input type="checkbox" id="sms"> Send the login code by SMS instead of the Telegram app.</label>
     <button id="send-code">${telegramAvailable ? 'Send login code' : 'Telegram not configured'}</button>
     <button class="ghost" id="back-code">Back</button>
+    <button class="ghost" id="bot-link">Use a bot token instead</button>
     <div class="meta">Use international format. Relay asks Telegram for a login code; the code is never stored.</div>
   </section>
 
@@ -77,6 +79,14 @@ export function pairPage({ code, telegramAvailable }: PairPageOptions): string {
     <input id="password" type="password" autocomplete="current-password" placeholder="Your Telegram 2FA password">
     <button id="password-next">Unlock</button>
     <div class="meta">Your password is forwarded once to Telegram and never persisted.</div>
+  </section>
+
+  <section id="step-bot" class="step">
+    <label for="bot-token">TELEGRAM BOT TOKEN</label>
+    <input id="bot-token" type="password" autocomplete="off" placeholder="123456789:AA...">
+    <button id="bot-connect">Connect bot inbox</button>
+    <button class="ghost" id="bot-back">Back</button>
+    <div class="meta">Bot mode reads messages sent to the bot (or to groups it can access), never your personal DMs. Create a bot with <strong>@BotFather</strong>, send it a message, then connect.</div>
   </section>
 
   <section id="step-done" class="step">
@@ -121,6 +131,19 @@ export function pairPage({ code, telegramAvailable }: PairPageOptions): string {
   });
 
   document.getElementById('back-code').addEventListener('click', function () { show('step-code'); say(''); });
+  document.getElementById('bot-link').addEventListener('click', function () { show('step-bot'); say(''); });
+  document.getElementById('bot-back').addEventListener('click', function () { show('step-telegram'); say(''); });
+  document.getElementById('bot-connect').addEventListener('click', async function () {
+    var token = document.getElementById('bot-token').value.trim();
+    if (!token) { say('Paste the bot token from BotFather.', true); return; }
+    say('Asking Telegram about the bot…');
+    try {
+      var data = await post('/api/pair/' + state.code + '/bot', { token: token });
+      show('step-done');
+      document.getElementById('done-copy').textContent = 'Synced ' + data.synced.threads + ' chats and ' + data.synced.messages + ' messages. Look at your glasses.';
+      say('Bot connected.');
+    } catch (err) { say(err.message, true); }
+  });
 
   document.getElementById('send-code').addEventListener('click', async function () {
     if (!document.getElementById('consent').checked) { say('Please confirm the access note first.', true); return; }
@@ -128,7 +151,7 @@ export function pairPage({ code, telegramAvailable }: PairPageOptions): string {
     if (!state.phone) { say('Enter your phone number.', true); return; }
     say('Asking Telegram for a code…');
     try {
-      var data = await post('/api/pair/' + state.code + '/telegram/start', { phone: state.phone });
+      var data = await post('/api/pair/' + state.code + '/telegram/start', { phone: state.phone, forceSMS: document.getElementById('sms').checked });
       say(data.isCodeViaApp ? 'Code sent in the Telegram app.' : 'Code sent by SMS.');
       show('step-verify');
       document.getElementById('phone-code').focus();

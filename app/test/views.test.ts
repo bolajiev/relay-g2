@@ -211,6 +211,15 @@ test('empty brief is a calm clear state, not an error', () => {
   assert.deepEqual(validateView(view), [])
 })
 
+test('a connected account gets a disconnect menu item; demo does not', () => {
+  const demoState = state('brief')
+  assert.ok(!viewFor(demoState).menu.some(m => m.id === 6))
+  const liveState = state('brief')
+  liveState.demo = false
+  const view = viewFor(liveState)
+  assert.ok(view.menu.some(m => m.name === 'Disconnect Telegram'))
+})
+
 test('a long note is shortened to one footer line', () => {
   const s = state('brief')
   s.note = 'x'.repeat(200)
