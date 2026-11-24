@@ -272,7 +272,6 @@ The suite covers:
 ```
 PASS · full journey
   brief lit=6280 · detail lit=5644 · draft lit=3467 · sent lit=3449
-  sensitive tap → review opened, no send
   pair code issued · screenshots in docs/
 ```
 
