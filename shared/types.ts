@@ -1,10 +1,14 @@
 export type AccountKind = 'demo' | 'telegram' | 'bot'
 export type AskClass = 'clear' | 'possible'
 export type Sensitivity = 'normal' | 'sensitive'
+export type MarketSource = 'hyperliquid' | 'fixture'
 export type ThreadKind = 'dm' | 'group' | 'channel'
 export type Direction = 'in' | 'out'
 export type ScreenName =
   | 'boot'
+  | 'market'
+  | 'market-confirm'
+  | 'market-done'
   | 'brief'
   | 'detail'
   | 'listening'
@@ -30,6 +34,7 @@ export interface Account {
   botTokenEnc?: string
   botId?: string
   botName?: string
+  paperPositions?: PaperPosition[]
 }
 
 export interface AccountStats {
@@ -37,6 +42,42 @@ export interface AccountStats {
   sensitiveCleared: number
   totalResolveMs: number
   resolveSamples: number
+  paperDeRisks?: number
+}
+
+export interface PaperPosition {
+  id: string
+  asset: string
+  side: 'long' | 'short'
+  size: number
+  entry: number
+  leverage: number
+  liquidationPrice: number
+  openedAt: number
+  closedAt?: number
+}
+
+export interface MarketSignal {
+  channel: string
+  text: string
+  ageMinutes: number
+  asset: string
+}
+
+export interface MarketView {
+  signal: MarketSignal
+  asset: string
+  markPrice: number
+  funding: number
+  openInterest: number
+  prevDayPrice: number
+  source: MarketSource
+  paper: true
+  position: PaperPosition & {
+    pnlUsd: number
+    pnlPct: number
+    liqDistancePct: number
+  }
 }
 
 export interface Thread {

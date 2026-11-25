@@ -87,6 +87,10 @@ def poll_console(t0):
         (r"RELAY SENT (.+)$", "sent"),
         (r"RELAY BRIEF", "brief"),
         (r"RELAY DIGEST", "digest"),
+        (r"RELAY MARKET LISTEN", "market-listen"),
+        (r"RELAY MARKET CONFIRM", "market-confirm"),
+        (r"RELAY MARKET$", "market"),
+        (r"RELAY DERISK", "derisk"),
         (r"RELAY PAIR (\d{6})", "pair"),
         (r"RELAY HEARD (.+)$", "heard"),
     ]
@@ -135,8 +139,16 @@ def main():
         (31.0, "double_click"),
         (33.0, "context_menu"),
         (33.7, "down"),
-        (34.2, "click"),
-        (39.0, "double_click"),
+        (34.2, "down"),
+        (34.7, "click"),
+        (39.0, "long_press"),
+        (41.0, "long_press_release"),
+        (42.5, "click"),
+        (48.5, "double_click"),
+        (50.0, "context_menu"),
+        (50.7, "down"),
+        (51.2, "click"),
+        (56.0, "double_click"),
     ]
     for at, action in actions:
         delay = t0 + at - time.monotonic()
@@ -148,7 +160,7 @@ def main():
         except Exception as exc:
             print(f"  {at:5.1f}s  {action} failed: {exc}")
 
-    delay = t0 + 42.0 - time.monotonic()
+    delay = t0 + 58.0 - time.monotonic()
     if delay > 0:
         time.sleep(delay)
     stop.set()

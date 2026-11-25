@@ -1,4 +1,4 @@
-import type { DigestItem, Loop, Message, ScreenName } from '../../shared/types'
+import type { DigestItem, Loop, MarketView, Message, ScreenName } from '../../shared/types'
 import { ageLabel, shorten } from '../../shared/loops'
 
 export interface TextBox {
@@ -60,6 +60,9 @@ export interface ViewState {
   listeningSeconds: number
   listeningBars: number[]
   listeningSource: 'glasses' | 'ring' | 'phone' | ''
+  listeningFor: 'loop' | 'market'
+  market: MarketView | null
+  marketPercent: number
   busy: boolean
 }
 
@@ -81,6 +84,7 @@ export const LIST_ITEM_MAX = 58
 export const SCREEN_MENU: MenuEntry[] = [
   { id: 1, name: 'Digest' },
   { id: 2, name: 'Connect Telegram' },
+  { id: 7, name: 'Markets' },
   { id: 3, name: 'Refresh' },
 ]
 
@@ -250,6 +254,7 @@ export function listeningWave(state: ViewState): string {
 export function listeningView(state: ViewState): View {
   const boxes: TextBox[] = [capture()]
   boxes.push(header(listeningHeader(state), 4))
+  const market = state.listeningFor === 'market'
   boxes.push(
     box({
       id: 3,
@@ -258,7 +263,7 @@ export function listeningView(state: ViewState): View {
       y: 44,
       w: W - M * 2,
       h: 64,
-      content: "Speak like you'd text.\nRelease to clean it up.",
+      content: market ? 'Say "de-risk 25".\nRelease to confirm.' : "Speak like you'd text.\nRelease to clean it up.",
       color: 3,
       pad: 2,
     }),
@@ -272,12 +277,12 @@ export function listeningView(state: ViewState): View {
       y: 156,
       w: W - M * 2,
       h: 80,
-      content: 'No live transcript by design.\nAI drafts, you approve.',
+      content: market ? 'Paper only · no real funds.\nOne tap to confirm.' : 'No live transcript by design.\nAI drafts, you approve.',
       color: 2,
       pad: 2,
     }),
   )
-  boxes.push(footer(state, 'RELEASE to draft · DOUBLE cancel'))
+  boxes.push(footer(state, market ? 'RELEASE to confirm · DOUBLE cancel' : 'RELEASE to draft · DOUBLE cancel'))
   return { boxes, menu: [] }
 }
 
@@ -474,12 +479,156 @@ export function errorView(state: ViewState): View {
   return { boxes, menu: [] }
 }
 
+function money(value: number): string {
+  return Math.round(value).toLocaleString('en-US')
+}
+
+function signedMoney(value: number): string {
+  return `${value >= 0 ? '+' : '-'}$${money(Math.abs(value))}`
+}
+
+export function marketView(state: ViewState): View {
+  const boxes: TextBox[] = [capture()]
+  boxes.push(header('MARKETS · PAPER', 3))
+  const m = state.market
+  if (!m) {
+    boxes.push(
+      box({
+        id: 3,
+        name: 'loading',
+        x: M,
+        y: 64,
+        w: W - M * 2,
+        h: 100,
+        content: 'Loading Hyperliquid...\nPaper only · no funds',
+        color: 3,
+        border: 1,
+        borderColor: 6,
+        radius: 5,
+        pad: 12,
+      }),
+    )
+    boxes.push(footer(state, 'DOUBLE back'))
+    return { boxes, menu: menuFor(state) }
+  }
+  boxes.push(
+    box({
+      id: 3,
+      name: 'signal',
+      x: M,
+      y: 44,
+      w: W - M * 2,
+      h: 76,
+      content: `SIGNAL · ${m.signal.channel.toUpperCase()} · ${ageLabel(m.signal.ageMinutes)}\n${shorten(m.signal.text.replace(/open interest/i, 'OI'), 58)}`,
+      color: 3,
+      border: 1,
+      borderColor: 6,
+      radius: 5,
+      pad: 4,
+    }),
+  )
+  const p = m.position
+  const positionText = p.closedAt || p.size <= 0
+    ? 'PAPER · BTC-PERP CLOSED\nNo real funds · no API keys'
+    : `PAPER · ${p.asset}-PERP ${p.side.toUpperCase()} ${p.size}\nMARK ${money(m.markPrice)} · PNL ${signedMoney(p.pnlUsd)} (${p.pnlPct > 0 ? '+' : ''}${p.pnlPct}%)\nLIQ ${money(p.liquidationPrice)} · ${p.liqDistancePct}% away`
+  boxes.push(
+    box({
+      id: 4,
+      name: 'position',
+      x: M,
+      y: 124,
+      w: W - M * 2,
+      h: 104,
+      content: positionText,
+      color: 4,
+      border: 1,
+      borderColor: 10,
+      radius: 5,
+      pad: 4,
+    }),
+  )
+  boxes.push(footer(state, 'TAP de-risk · HOLD speak · DOUBLE back'))
+  return { boxes, menu: menuFor(state) }
+}
+
+export function marketConfirmView(state: ViewState): View {
+  const boxes: TextBox[] = [capture()]
+  const m = state.market
+  const pct = state.marketPercent
+  boxes.push(header('CONFIRM · PAPER ONLY', 4))
+  if (!m) {
+    boxes.push(header('MARKETS · PAPER'))
+    boxes.push(footer(state, 'DOUBLE back'))
+    return { boxes, menu: [] }
+  }
+  const p = m.position
+  const remaining = 1 - pct / 100
+  const distance = p.side === 'long' ? m.markPrice - p.liquidationPrice : p.liquidationPrice - m.markPrice
+  const newLiq = remaining > 0 ? m.markPrice + (p.side === 'long' ? -distance / remaining : distance / remaining) : 0
+  const newSize = p.size * remaining
+  const content = `${pct >= 100 ? 'CLOSE' : 'REDUCE'} BTC-PERP BY ${pct}%\nSize ${p.size} → ${newSize.toFixed(3)}\nNew liq ~${newLiq > 0 ? money(newLiq) : 'closed'}\nNo real funds · no API keys`
+  boxes.push(
+    box({
+      id: 3,
+      name: 'confirm',
+      x: M,
+      y: 44,
+      w: W - M * 2,
+      h: 150,
+      content,
+      color: 4,
+      border: 1,
+      borderColor: 10,
+      radius: 5,
+      pad: 8,
+    }),
+  )
+  boxes.push(footer(state, 'TAP confirm · DOUBLE cancel'))
+  return { boxes, menu: [] }
+}
+
+export function marketDoneView(state: ViewState): View {
+  const boxes: TextBox[] = [capture()]
+  boxes.push(header('RISK CUT · PAPER', 4))
+  const m = state.market
+  const p = m?.position
+  const content = p
+    ? p.size <= 0 || p.closedAt
+      ? 'BTC-PERP · CLOSED\nPaper only · no real funds'
+      : `BTC-PERP · ${state.marketPercent}% REDUCED\nNew liq ${money(p.liquidationPrice)} · ${p.liqDistancePct}% away\nPaper only · no real funds`
+    : 'Paper position updated.'
+  boxes.push(
+    box({
+      id: 3,
+      name: 'done',
+      x: M,
+      y: 56,
+      w: W - M * 2,
+      h: 140,
+      content,
+      color: 4,
+      border: 1,
+      borderColor: 8,
+      radius: 5,
+      pad: 12,
+    }),
+  )
+  boxes.push(footer(state, 'TAP markets · DOUBLE back'))
+  return { boxes, menu: menuFor(state) }
+}
+
 export function viewFor(state: ViewState): View {
   switch (state.screen) {
     case 'boot':
       return bootView()
     case 'brief':
       return briefView(state)
+    case 'market':
+      return marketView(state)
+    case 'market-confirm':
+      return marketConfirmView(state)
+    case 'market-done':
+      return marketDoneView(state)
     case 'detail':
       return detailView(state)
     case 'listening':

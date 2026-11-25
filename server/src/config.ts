@@ -14,6 +14,7 @@ export interface Config {
   stt: { enabled: boolean; baseUrl: string; apiKey: string; model: string; localBin: string }
   demoVoice: boolean
   botApiBase: string
+  marketApiBase: string
 }
 
 function bool(value: string | undefined, fallback = false): boolean {
@@ -66,5 +67,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     demoVoice: bool(env.DEMO_VOICE, true),
     botApiBase: (env.BOT_API_BASE ?? 'https://api.telegram.org').replace(/\/$/, ''),
+    marketApiBase: (env.MARKET_API_BASE ?? 'https://api.hyperliquid.xyz/info').replace(/\/$/, ''),
   }
 }

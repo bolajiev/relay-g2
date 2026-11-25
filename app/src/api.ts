@@ -1,6 +1,6 @@
 import { buildDigest, buildOpenLoops, countChannels, draftReply } from '../../shared/loops'
 import { createSeed } from '../../shared/seed'
-import type { DigestItem, Inbox, Loop, Message, Thread } from '../../shared/types'
+import type { DigestItem, Inbox, Loop, MarketView, Message, PaperPosition, Thread } from '../../shared/types'
 
 export class ApiError extends Error {
   constructor(
@@ -43,6 +43,16 @@ class LocalStore {
   private threads: Thread[]
   private messages: Message[]
   private now0: number
+  private marketPosition: PaperPosition = {
+    id: 'pp_local',
+    asset: 'BTC',
+    side: 'long',
+    size: 0.15,
+    entry: 55_713,
+    leverage: 5,
+    liquidationPrice: 46_799,
+    openedAt: Date.now() - 3_600_000,
+  }
 
   constructor() {
     this.now0 = Date.now()
@@ -116,6 +126,68 @@ class LocalStore {
 
   digest(): DigestItem[] {
     return buildDigest(this.threads, this.messages, Date.now())
+  }
+
+  private marketMetrics(position: PaperPosition, mark: number): MarketView['position'] {
+    const pnlUsd =
+      position.side === 'long' ? (mark - position.entry) * position.size : (position.entry - mark) * position.size
+    const margin = (position.entry * position.size) / position.leverage
+    const liqDistancePct =
+      position.side === 'long'
+        ? ((mark - position.liquidationPrice) / mark) * 100
+        : ((position.liquidationPrice - mark) / mark) * 100
+    return {
+      ...position,
+      pnlUsd: Math.round(pnlUsd * 100) / 100,
+      pnlPct: margin > 0 ? Math.round((pnlUsd / margin) * 1000) / 10 : 0,
+      liqDistancePct: Math.round(Math.max(0, liqDistancePct) * 10) / 10,
+    }
+  }
+
+  market(): MarketView {
+    const markPrice = 57_436
+    return {
+      signal: {
+        channel: 'DeFi Digest',
+        text: 'BTC perp open interest is at a 30-day high; funding is flipping.',
+        ageMinutes: 15,
+        asset: 'BTC',
+      },
+      asset: 'BTC',
+      markPrice,
+      funding: 0.0000087022,
+      openInterest: 33_814,
+      prevDayPrice: 60_438,
+      source: 'fixture',
+      paper: true,
+      position: this.marketMetrics(this.marketPosition, markPrice),
+    }
+  }
+
+  deRisk(asset: string, percent: number): MarketView {
+    if (asset !== 'BTC') throw new ApiError(400, 'market_asset_unsupported')
+    if (this.marketPosition.closedAt || this.marketPosition.size <= 0) {
+      throw new ApiError(409, 'market_position_closed')
+    }
+    const pct = Math.max(10, Math.min(100, Math.round(percent)))
+    const remaining = 1 - pct / 100
+    const mark = 57_436
+    if (remaining <= 0) {
+      this.marketPosition = { ...this.marketPosition, size: 0, closedAt: Date.now() }
+    } else {
+      const distance =
+        this.marketPosition.side === 'long'
+          ? mark - this.marketPosition.liquidationPrice
+          : this.marketPosition.liquidationPrice - mark
+      const liq =
+        this.marketPosition.side === 'long' ? mark - distance / remaining : mark + distance / remaining
+      this.marketPosition = {
+        ...this.marketPosition,
+        size: Math.round(this.marketPosition.size * remaining * 10000) / 10000,
+        liquidationPrice: Math.round(liq * 10) / 10,
+      }
+    }
+    return this.market()
   }
 }
 
@@ -280,6 +352,20 @@ export class RelayApi {
     if (this.offline) return this.localStore().inbox()
     const res = await this.request<{ inbox: Inbox }>('/api/session/revoke', { method: 'POST' }, 8_000)
     return res.inbox
+  }
+
+  async market(): Promise<MarketView> {
+    if (this.offline) return this.localStore().market()
+    return this.request('/api/market', {}, 8_000)
+  }
+
+  async deRisk(asset: string, percent: number): Promise<MarketView> {
+    if (this.offline) return this.localStore().deRisk(asset, percent)
+    return this.request(
+      '/api/market/de-risk',
+      { method: 'POST', body: JSON.stringify({ asset, percent }) },
+      10_000,
+    )
   }
 
   async digest(): Promise<DigestItem[]> {

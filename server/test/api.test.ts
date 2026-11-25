@@ -112,7 +112,7 @@ test('demo session → inbox → draft → send → inbox shrinks', async t => {
 
   const digest = await call(base, '/api/digest', { headers: auth })
   assert.equal(digest.status, 200)
-  assert.equal(digest.json.items.length, 5)
+  assert.equal(digest.json.items.length, 6)
   assert.equal(digest.json.items[0].channel, 'DeFi Digest')
 
   const stats = await call(base, '/api/stats', { headers: auth })
@@ -204,6 +204,54 @@ test('revoking a session deletes the Telegram link and restores the demo', async
   assert.equal(revoked.json.inbox.demo, true)
   assert.equal(revoked.json.inbox.loops.length, 5)
   assert.equal(store.account(account.id)?.tgSessionEnc, undefined)
+})
+
+test('market context and paper de-risk are exposed over HTTP', async t => {
+  const hyper = http.createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(
+      JSON.stringify([
+        { universe: [{ name: 'BTC' }] },
+        [{ funding: '0.0000087022', openInterest: '33814', prevDayPx: '60438', markPx: '57436' }],
+      ]),
+    )
+  })
+  hyper.listen(0, '127.0.0.1')
+  await once(hyper, 'listening')
+  const hyperAddress = hyper.address()
+  if (!hyperAddress || typeof hyperAddress === 'string') throw new Error('no hyper port')
+  t.after(() => hyper.close())
+
+  const { server, base } = await boot({ MARKET_API_BASE: `http://127.0.0.1:${hyperAddress.port}` })
+  t.after(() => server.close())
+  const session = await call(base, '/api/session/demo', { method: 'POST' })
+  const auth = { Authorization: `Bearer ${session.json.token}`, 'Content-Type': 'application/json' }
+
+  const market = await call(base, '/api/market', { headers: auth })
+  assert.equal(market.status, 200)
+  assert.equal(market.json.paper, true)
+  assert.equal(market.json.source, 'hyperliquid')
+  assert.equal(market.json.markPrice, 57436)
+  assert.equal(market.json.position.size, 0.15)
+
+  const cut = await call(base, '/api/market/de-risk', {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ asset: 'BTC', percent: 25 }),
+  })
+  assert.equal(cut.status, 200)
+  assert.equal(cut.json.position.size, 0.1125)
+  assert.equal(cut.json.paper, true)
+
+  const bad = await call(base, '/api/market/de-risk', {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ asset: 'BTC', percent: 5 }),
+  })
+  assert.equal(bad.status, 400)
+
+  const unauth = await call(base, '/api/market')
+  assert.equal(unauth.status, 401)
 })
 
 test('bot pairing attaches a Bot API inbox, sends through it and revokes', async t => {

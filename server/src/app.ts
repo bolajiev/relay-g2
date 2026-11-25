@@ -10,6 +10,7 @@ import { draftWithAI } from './services/ai'
 import { transcribe } from './services/stt'
 import { TelegramService } from './services/telegram'
 import { BotService } from './services/bot'
+import { MarketService } from './services/market'
 import { pairPage } from './pages/pair'
 
 export interface AppDeps {
@@ -55,6 +56,7 @@ export function createApp(deps: AppDeps): express.Express {
   const now = deps.now ?? (() => Date.now())
   const telegram = deps.telegram ?? new TelegramService(config)
   const botService = new BotService(config)
+  const marketService = new MarketService(config, store)
   const app = express()
 
   app.set('trust proxy', true)
@@ -275,6 +277,32 @@ export function createApp(deps: AppDeps): express.Express {
       return
     }
     res.json({ ok: true, muted, inbox: store.inbox(account.id, now()) })
+  })
+
+  app.get('/api/market', async (req, res) => {
+    const account = auth(req, res)
+    if (!account) return
+    res.json(await marketService.view(account.id))
+  })
+
+  app.post('/api/market/de-risk', async (req, res) => {
+    const account = auth(req, res)
+    if (!account) return
+    const asset = typeof req.body?.asset === 'string' ? req.body.asset.toUpperCase().slice(0, 8) : 'BTC'
+    const percent = numberValue(req.body?.percent, 25)
+    if (!Number.isFinite(percent) || percent < 10 || percent > 100) {
+      res.status(400).json({ error: 'bad_percent', message: 'De-risk 10–100%.' })
+      return
+    }
+    try {
+      res.json(await marketService.deRisk(account.id, asset, percent))
+    } catch (err) {
+      if (err instanceof ServiceError) {
+        res.status(err.status).json({ error: err.code, message: err.message })
+        return
+      }
+      throw err
+    }
   })
 
   app.get('/api/stats', (req, res) => {

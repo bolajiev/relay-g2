@@ -128,8 +128,8 @@ test('shorten never cuts mid-word and stays within budget', () => {
 test('digest is chronological, capped and channel-only', () => {
   const { threads, messages } = createSeed('acc_test', NOW)
   const items = buildDigest(threads, messages, NOW)
-  assert.equal(items.length, 5)
-  assert.deepEqual(items.map(i => i.channel), ['DeFi Digest', 'AI Daily', 'DeFi Digest', 'AI Daily', 'DeFi Digest'])
+  assert.equal(items.length, 6)
+  assert.deepEqual(items.map(i => i.channel), ['DeFi Digest', 'DeFi Digest', 'AI Daily', 'DeFi Digest', 'AI Daily', 'DeFi Digest'])
   assert.ok(items.every(i => i.text.length <= 72))
 })
 

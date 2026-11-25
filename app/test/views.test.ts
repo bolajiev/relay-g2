@@ -2,12 +2,26 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { buildDigest, buildOpenLoops } from '../../shared/loops'
 import { createSeed } from '../../shared/seed'
-import type { ScreenName } from '../../shared/types'
+import type { MarketView, ScreenName } from '../../shared/types'
 import { LAYOUT, overflow, viewFor, validateView, visibleBoxes, type ViewState } from '../src/views'
 
 const NOW = 1_800_000_000_000
 const seed = createSeed('acc_view', NOW)
 const loops = buildOpenLoops(seed.threads, seed.messages, NOW)
+const marketFixture: MarketView = {
+  signal: { channel: 'DeFi Digest', text: 'BTC perp open interest is at a 30-day high; funding is flipping.', ageMinutes: 15, asset: 'BTC' },
+  asset: 'BTC',
+  markPrice: 57_436,
+  funding: 0.0000087022,
+  openInterest: 33_814,
+  prevDayPrice: 60_438,
+  source: 'fixture',
+  paper: true,
+  position: {
+    id: 'pp_test', asset: 'BTC', side: 'long', size: 0.15, entry: 55_713, leverage: 5,
+    liquidationPrice: 46_799, openedAt: NOW, pnlUsd: 258.45, pnlPct: 15.5, liqDistancePct: 18.5,
+  },
+}
 
 function state(screen: ScreenName): ViewState {
   const detail = {
@@ -31,11 +45,14 @@ function state(screen: ScreenName): ViewState {
     listeningSeconds: 4,
     listeningBars: Array.from({ length: 48 }, (_, i) => (i % 8) / 8),
     listeningSource: 'ring',
+    listeningFor: 'loop',
+    market: marketFixture,
+    marketPercent: 25,
     busy: false,
   }
 }
 
-const screens: ScreenName[] = ['boot', 'brief', 'detail', 'listening', 'draft', 'sent', 'digest', 'pair', 'error']
+const screens: ScreenName[] = ['boot', 'brief', 'detail', 'listening', 'draft', 'sent', 'digest', 'pair', 'error', 'market', 'market-confirm', 'market-done']
 
 test('every screen satisfies the firmware container contract', () => {
   for (const screen of screens) {
@@ -190,8 +207,9 @@ test('digest renders channel names and caps at three items', () => {
   const view = viewFor(state('digest'))
   assert.ok(view.list, 'digest uses a native list')
   assert.equal(view.list!.items.length, 4)
-  assert.match(view.list!.items[0], /^DeFi Digest · 20m — EigenLayer/)
-  assert.match(view.list!.items[1], /^AI Daily · 55m — OpenAI/)
+  assert.match(view.list!.items[0], /^DeFi Digest · 15m — BTC perp open interest/)
+  assert.match(view.list!.items[1], /^DeFi Digest · 20m — EigenLayer/)
+  assert.match(view.list!.items[2], /^AI Daily · 55m — OpenAI/)
   assert.ok(view.list!.items.every(i => i.length <= 58))
 })
 
@@ -209,6 +227,36 @@ test('empty brief is a calm clear state, not an error', () => {
   assert.equal(view.list, undefined)
   assert.match(view.boxes.map(b => b.content).join('\n'), /Nothing waiting\./)
   assert.deepEqual(validateView(view), [])
+})
+
+test('market screen shows the Telegram signal and paper position', () => {
+  const view = viewFor(state('market'))
+  const header = view.boxes.find(b => b.name === 'header')!
+  const signal = view.boxes.find(b => b.name === 'signal')!
+  const position = view.boxes.find(b => b.name === 'position')!
+  assert.match(header.content, /MARKETS · PAPER/)
+  assert.match(signal.content, /SIGNAL · DEFI DIGEST · 15m/)
+  assert.match(signal.content, /BTC perp OI/)
+  assert.match(position.content, /PAPER · BTC-PERP LONG 0\.15/)
+  assert.match(position.content, /PNL \+\$258/)
+  assert.match(position.content, /LIQ 46,799/)
+  assert.match(view.boxes.find(b => b.name === 'footer')!.content, /TAP de-risk/)
+})
+
+test('market confirm is explicit and paper-only', () => {
+  const view = viewFor(state('market-confirm'))
+  const header = view.boxes.find(b => b.name === 'header')!
+  const body = view.boxes.find(b => b.name === 'confirm')!
+  assert.match(header.content, /CONFIRM · PAPER ONLY/)
+  assert.match(body.content, /REDUCE BTC-PERP BY 25%/)
+  assert.match(body.content, /No real funds · no API keys/)
+  assert.match(view.boxes.find(b => b.name === 'footer')!.content, /TAP confirm/)
+})
+
+test('market done reports the risk cut', () => {
+  const view = viewFor(state('market-done'))
+  assert.match(view.boxes.find(b => b.name === 'header')!.content, /RISK CUT · PAPER/)
+  assert.match(view.boxes.find(b => b.name === 'done')!.content, /BTC-PERP · 25% REDUCED/)
 })
 
 test('a connected account gets a disconnect menu item; demo does not', () => {

@@ -83,6 +83,7 @@ export function createSeed(accountId: string, now = Date.now()): SeedData {
     m('1', 'defi', 'in', 'DeFi Digest', 'EigenLayer unlocks 12M tokens next week.', 20),
     m('2', 'defi', 'in', 'DeFi Digest', 'Base TVL crosses $8B as onchain activity accelerates.', 75),
     m('3', 'defi', 'in', 'DeFi Digest', 'USDC yields tick up to 6.1% on Aave.', 180),
+    m('4', 'defi', 'in', 'DeFi Digest', 'BTC perp open interest is at a 30-day high; funding is flipping.', 15),
     m('1', 'ai', 'in', 'AI Daily', 'OpenAI ships realtime voice API v2 with lower latency.', 55),
     m('2', 'ai', 'in', 'AI Daily', "Anthropic expands Claude's context window for enterprise.", 160),
 

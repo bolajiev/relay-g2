@@ -44,12 +44,20 @@ LISTEN = marker("listen", OPEN, 11.0)
 DRAFT = marker("draft", LISTEN, 13.5)
 SENT = marker("sent", DRAFT, 20.0)
 DIGEST = marker("digest", SENT, 26.0)
-PAIR = marker("pair", DIGEST, 34.0)
+MARKET = marker("market", DIGEST, 35.0)
+MARKET_LISTEN = marker("market-listen", MARKET, 39.0)
+MARKET_CONFIRM = marker("market-confirm", MARKET_LISTEN, 41.5)
+DERISK = marker("derisk", MARKET_CONFIRM, 45.2)
+PAIR = marker("pair", DERISK, 52.0)
 BRIEFS = sorted(m["t"] for m in MARKERS if m["name"] == "brief")
 BRIEF2 = next((t for t in BRIEFS if t > SENT), 22.0)
 BRIEF3 = next((t for t in BRIEFS if t > DIGEST), 31.0)
-BRIEF4 = next((t for t in BRIEFS if t > PAIR), 39.0)
+BRIEF4 = next((t for t in BRIEFS if t > DERISK), 49.2)
+BRIEF5 = next((t for t in BRIEFS if t > PAIR), 56.4)
 CAPTURE_END = META["duration"]
+# Capture is not guaranteed to hit the nominal 10 fps (screenshot latency).
+# Use the observed rate so frame index and marker timestamps stay aligned.
+OUT_FPS = len(TIMES) / CAPTURE_END if CAPTURE_END else FPS
 END_EXTRA = 8.0
 SAFETY_START = CAPTURE_END
 SAFETY_END = CAPTURE_END + 4.0
@@ -57,7 +65,7 @@ TOTAL = SAFETY_END + 4.0
 
 print(
     f"timeline open={OPEN} listen={LISTEN} draft={DRAFT} sent={SENT} "
-    f"digest={DIGEST} pair={PAIR} briefs={BRIEFS}"
+    f"digest={DIGEST} market={MARKET} market-listen={MARKET_LISTEN} market-confirm={MARKET_CONFIRM} derisk={DERISK} pair={PAIR} briefs={BRIEFS}"
 )
 
 
@@ -139,11 +147,21 @@ def caption_for(t):
         return ("06 · BACK", "The phone never left your pocket.", None)
     if t < BRIEF3:
         return ("07 · DIGEST", "Channels never interrupt. They wait here.", None)
-    if t < PAIR:
-        return ("08 · BACK", "Only what needs you.", None)
+    if t < MARKET:
+        return ("08 · RISK", "Now the other kind of open loop.", None)
+    if t < MARKET_LISTEN:
+        return ("09 · MARKETS", "A Telegram signal. A live position. PAPER.", None)
+    if t < MARKET_CONFIRM:
+        return ("10 · SPEAK", "Say \"de-risk 25\". Release to confirm.", None)
+    if t < DERISK:
+        return ("11 · CONFIRM", "One tap. No real funds. No API keys.", None)
     if t < BRIEF4:
-        return ("09 · PAIR", "Connect Telegram with a 6-digit code.", "No API keys on the glasses.")
-    return ("10 · DONE", "The brief is clear. Your phone stayed in your pocket.", None)
+        return ("12 · DE-RISK", "Risk cut. Liquidation moved away.", None)
+    if t < PAIR:
+        return ("13 · BACK", "Back to people.", None)
+    if t < BRIEF5:
+        return ("14 · PAIR", "Connect Telegram with a 6-digit code.", "No API keys on the glasses.")
+    return ("15 · DONE", "Read. Speak. Confirm.", None)
 
 
 def display_frame(raw_path):
@@ -159,20 +177,23 @@ def draw_title(draw):
     spaced(draw, title, (W - tw) / 2, 300, F["title"], GREEN, 18)
     sub = "Reply debt, cleared."
     sw = draw.textlength(sub, font=F["title_sub"])
-    draw.text(((W - sw) / 2, 500), sub, font=F["title_sub"], fill=INK)
-    small = "Read at a glance. Reply by voice."
+    draw.text(((W - sw) / 2, 485), sub, font=F["title_sub"], fill=INK)
+    small = "People waiting. Positions at risk."
     mw = draw.textlength(small, font=F["title_small"])
-    draw.text(((W - mw) / 2, 575), small, font=F["title_small"], fill=DIM)
+    draw.text(((W - mw) / 2, 555), small, font=F["title_small"], fill=GREEN)
+    small2 = "Read at a glance. Speak. Confirm."
+    mw2 = draw.textlength(small2, font=F["title_small"])
+    draw.text(((W - mw2) / 2, 600), small2, font=F["title_small"], fill=DIM)
     tiny = "DEMO  ·  FICTIONAL INBOX  ·  EVEN G2"
     tw2 = draw.textlength(tiny, font=F["label"])
     draw.text(((W - tw2) / 2, 980), tiny, font=F["label"], fill=FAINT)
 
 
 def draw_end(draw):
-    title = "Read. Speak. Done."
+    title = "Read. Speak. Confirm."
     tw = draw.textlength(title, font=F["end"])
     draw.text(((W - tw) / 2, 380), title, font=F["end"], fill=INK)
-    sub = "Relay — reply debt, cleared."
+    sub = "Relay — people and positions."
     sw = draw.textlength(sub, font=F["end_sub"])
     draw.text(((W - sw) / 2, 505), sub, font=F["end_sub"], fill=GREEN)
     small = "Built for the Even Realities Heads Up hackathon · 2026"
@@ -270,13 +291,13 @@ def main():
         image.save(os.path.join(WORK, f"f{count:05d}.png"))
         count += 1
 
-    extra = int(END_EXTRA * FPS)
+    extra = int(END_EXTRA * OUT_FPS)
     for j in range(extra):
-        t = CAPTURE_END + j / FPS
+        t = CAPTURE_END + j / OUT_FPS
         compose(t).save(os.path.join(WORK, f"f{count:05d}.png"))
         count += 1
 
-    print(f"· composited {count} frames ({count / FPS:.1f}s)")
+    print(f"· composited {count} frames at {OUT_FPS:.2f} fps ({count / OUT_FPS:.1f}s)")
     subprocess.run(
         [
             "ffmpeg",
@@ -284,7 +305,7 @@ def main():
             "-loglevel",
             "error",
             "-framerate",
-            str(FPS),
+            f"{OUT_FPS:.4f}",
             "-i",
             os.path.join(WORK, "f%05d.png"),
             "-c:v",

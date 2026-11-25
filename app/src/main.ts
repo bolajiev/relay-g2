@@ -30,6 +30,9 @@ const state: ViewState = {
   listeningSeconds: 0,
   listeningBars: [],
   listeningSource: '',
+  listeningFor: 'loop',
+  market: null,
+  marketPercent: 25,
   busy: false,
 }
 
@@ -142,6 +145,40 @@ async function openDigest(): Promise<void> {
   log('DIGEST')
 }
 
+async function openMarket(): Promise<void> {
+  clearPairPolling()
+  go('market')
+  state.note = ''
+  state.busy = true
+  await paint()
+  try {
+    state.market = await api.market()
+    log('MARKET')
+  } catch (err) {
+    setNote(err instanceof Error ? err.message : 'Market unavailable', 0)
+  }
+  state.busy = false
+  await paint()
+}
+
+async function deRiskMarket(): Promise<void> {
+  const market = state.market
+  if (!market || state.busy) return
+  state.busy = true
+  setNote('Paper de-risk...', 0)
+  await paint()
+  try {
+    state.market = await api.deRisk(market.asset, state.marketPercent)
+    go('market-done')
+    log(`DERISK ${state.marketPercent}`)
+  } catch (err) {
+    setNote(err instanceof Error ? err.message : 'De-risk failed', 0)
+  }
+  state.busy = false
+  state.note = ''
+  await paint()
+}
+
 async function openPair(): Promise<void> {
   clearPairPolling()
   go('pair')
@@ -211,8 +248,10 @@ async function back(): Promise<void> {
   await openBrief()
 }
 
-async function startListening(source: 'glasses' | 'ring' | 'phone'): Promise<void> {
-  if (listening || !state.detail) return
+async function startListening(source: 'glasses' | 'ring' | 'phone', target: 'loop' | 'market' = 'loop'): Promise<void> {
+  if (listening) return
+  if (target === 'market' ? !state.market : !state.detail) return
+  state.listeningFor = target
   listening = true
   state.listeningSource = source
   state.listeningSeconds = 0
@@ -223,6 +262,7 @@ async function startListening(source: 'glasses' | 'ring' | 'phone'): Promise<voi
   await paint()
   listenStartedAt = Date.now()
   log(`LISTEN ${source}`)
+  if (target === 'market') log('MARKET LISTEN')
   if (listenTimer) window.clearInterval(listenTimer)
   listenTimer = window.setInterval(() => {
     if (!listening) return
@@ -241,6 +281,39 @@ async function startListening(source: 'glasses' | 'ring' | 'phone'): Promise<voi
   }, 160)
 }
 
+async function finishMarketListening(pcm: Uint8Array): Promise<void> {
+  let transcript = ''
+  try {
+    if (pcm.length > 6400) {
+      transcript = (await api.transcribePcm(toBase64(pcm))).text
+    } else if (state.demo) {
+      transcript = (await api.transcribeDemo('de-risk 25 percent')).text
+    } else {
+      setNote('No speech captured. Hold and say "de-risk 25".', 5000)
+      go('market')
+      await paint()
+      return
+    }
+  } catch {
+    if (state.demo) transcript = 'de-risk 25 percent'
+  }
+  const match = transcript.match(/(?:de-?risk|reduce|close)\s*(?:by\s*)?(\d{1,3})\s*%?/i)
+  const close = /\bclose\b/i.test(transcript)
+  if (!match && !close) {
+    setNote('Say "de-risk 25" or "close".', 5000)
+    go('market')
+    await paint()
+    return
+  }
+  const pct = close && !match ? 100 : Number(match?.[1] ?? 25)
+  state.marketPercent = Math.max(10, Math.min(100, pct))
+  state.busy = false
+  go('market-confirm')
+  await paint()
+  log('MARKET CONFIRM')
+  log(`MARKET HEARD ${transcript.slice(0, 60)}`)
+}
+
 async function finishListening(): Promise<void> {
   if (!listening) return
   listening = false
@@ -248,9 +321,13 @@ async function finishListening(): Promise<void> {
     window.clearInterval(listenTimer)
     listenTimer = undefined
   }
-  const loop = state.detail?.loop
   const pcm = await mic.stop(bridge)
   state.listeningBars = []
+  if (state.listeningFor === 'market') {
+    await finishMarketListening(pcm)
+    return
+  }
+  const loop = state.detail?.loop
   if (!loop) {
     await openBrief()
     return
@@ -336,7 +413,7 @@ async function cancelListening(): Promise<void> {
   }
   state.listeningBars = []
   state.listeningSeconds = 0
-  go('detail')
+  go(state.listeningFor === 'market' ? 'market' : 'detail')
   await paint()
 }
 
@@ -487,6 +564,20 @@ async function handleTap(): Promise<void> {
     case 'digest':
       await openDigest()
       break
+    case 'market':
+      if (!state.market) await openMarket()
+      else {
+        go('market-confirm')
+        await paint()
+        log('MARKET CONFIRM')
+      }
+      break
+    case 'market-confirm':
+      await deRiskMarket()
+      break
+    case 'market-done':
+      await openMarket()
+      break
     case 'pair':
       if (state.pair?.status === 'connected') await openBrief('Telegram connected')
       else if (state.pair) {
@@ -542,6 +633,16 @@ async function handleSwipe(direction: 'up' | 'down'): Promise<void> {
     case 'digest':
       await openBrief()
       break
+    case 'market':
+      await openBrief()
+      break
+    case 'market-confirm':
+      go('market')
+      await paint()
+      break
+    case 'market-done':
+      await openMarket()
+      break
     case 'pair':
       await openBrief()
       break
@@ -562,6 +663,7 @@ async function handleMenu(id: number): Promise<void> {
   else if (id === 4) await toggleVip()
   else if (id === 5) await muteCurrent()
   else if (id === 6) await revokeTelegram()
+  else if (id === 7) await openMarket()
 }
 
 let lastLongPressAt = 0
@@ -607,7 +709,9 @@ bridge.onEvenHubEvent(event => {
     if (type === OsEventTypeList.LONG_PRESS_EVENT) {
       lastLongPressAt = Date.now()
       if (!ready) return
-      if (state.screen === 'detail' || state.screen === 'draft') {
+      if (state.screen === 'market') {
+        void startListening(listeningSourceOf(sys.eventSource), 'market')
+      } else if (state.screen === 'detail' || state.screen === 'draft') {
         void startListening(listeningSourceOf(sys.eventSource))
       } else if (state.screen === 'brief') {
         void refresh()

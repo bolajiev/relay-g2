@@ -35,7 +35,7 @@ export interface SendResult {
 }
 
 const EMPTY: DB = { version: 1, accounts: [], threads: [], messages: [], tokens: [], pairCodes: [] }
-const emptyStats = (): AccountStats => ({ cleared: 0, sensitiveCleared: 0, totalResolveMs: 0, resolveSamples: 0 })
+const emptyStats = (): AccountStats => ({ cleared: 0, sensitiveCleared: 0, totalResolveMs: 0, resolveSamples: 0, paperDeRisks: 0 })
 const PAIR_TTL_MS = 10 * 60 * 1000
 
 export class Store {
@@ -79,6 +79,7 @@ export class Store {
       createdAt: now,
       styleSamples: [],
       stats: emptyStats(),
+      paperPositions: [],
     }
     const seed = createSeed(account.id, now)
     account.styleSamples = seed.styleSamples
@@ -184,6 +185,29 @@ export class Store {
     return true
   }
 
+  paperPosition(accountId: string, asset: string): import('../../shared/types').PaperPosition | null {
+    const account = this.account(accountId)
+    return account?.paperPositions?.find(p => p.asset === asset) ?? null
+  }
+
+  setPaperPosition(accountId: string, position: import('../../shared/types').PaperPosition): void {
+    const account = this.account(accountId)
+    if (!account) return
+    account.paperPositions ??= []
+    const idx = account.paperPositions.findIndex(p => p.id === position.id)
+    if (idx >= 0) account.paperPositions[idx] = position
+    else account.paperPositions.push(position)
+    this.save()
+  }
+
+  recordPaperDeRisk(accountId: string): void {
+    const account = this.account(accountId)
+    if (!account) return
+    const stats = (account.stats ??= emptyStats())
+    stats.paperDeRisks = (stats.paperDeRisks ?? 0) + 1
+    this.save()
+  }
+
   setVip(accountId: string, threadId: string, vip: boolean): boolean {
     const thread = this.db.threads.find(t => t.id === threadId && t.accountId === accountId)
     if (!thread) return false
@@ -230,6 +254,7 @@ export class Store {
     this.db.messages.push(...seed.messages)
     account.styleSamples = seed.styleSamples
     account.stats = emptyStats()
+    account.paperPositions = []
     account.kind = 'demo'
     delete account.tgSessionEnc
     delete account.tgUserId

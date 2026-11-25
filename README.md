@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/bolajiev/relay-g2/actions/workflows/ci.yml/badge.svg)](https://github.com/bolajiev/relay-g2/actions/workflows/ci.yml)
 
-[Watch the 50-second demo](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4) · [Pairing page screenshot](docs/pair-page.png) · [Packaged build](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay.ehpk) · [Source](https://github.com/bolajiev/relay-g2)
+[Watch the 66-second demo](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4) · [Pairing page screenshot](docs/pair-page.png) · [Packaged build](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay.ehpk) · [Source](https://github.com/bolajiev/relay-g2)
 
 <img src="docs/relay-demo-poster.png" alt="Relay drafting a reply on Even G2" width="900">
 
@@ -44,7 +44,7 @@ Relay classifies every inbound message before it becomes a loop:
 
 The user's spoken uncertainty is preserved: **"maybe Friday" → "Maybe Friday — I'll confirm."**, never "Yes, Friday works." A sensitive ask never gets a default "Yes, I'll pay/sign/approve" — the user has to review or speak. VIP senders rank higher and can be muted from the loop menu.
 
-**Track:** 01 · Messaging & News · **Special prize:** Best Telegram integration.
+**Tracks:** 01 · Messaging & News **+ 02 · Crypto & DeFi** · **Special prize:** Best Telegram integration.
 
 ---
 
@@ -65,6 +65,33 @@ The user's spoken uncertainty is preserved: **"maybe Friday" → "Maybe Friday �
 | <img src="docs/detail-check.png" width="420"> | <img src="docs/draft-check.png" width="420"> |
 
 Screenshots are real framebuffer captures from the Even Hub simulator (`npm run test:e2e` regenerates the display screenshots).
+
+### Why this is not another Telegram viewer
+
+The track is crowded with read/digest/draft apps. Relay is built around the **decision and the write**:
+
+| | Typical G2 Telegram app | Relay |
+|---|---|---|
+| What it shows | unread messages / digest | only **open loops**: someone is waiting, or a position is at risk |
+| Read | message text | extracted **ask** + context |
+| Write | copy a draft | hold ring → voice → cleaned draft → **one tap send** |
+| Safety | sends whatever AI writes | clear/possible/sensitive; **no default commitments**; review gate; uncertainty preserved |
+| Second surface | — | **Hyperliquid paper position** with voice/tap de-risk and confirm |
+| Evidence | demo | 58 tests, simulator E2E, packaged `.ehpk`, live Bot API proof |
+
+## Second track · Crypto & DeFi (Hyperliquid)
+
+**Not a trading terminal. A risk layer for the open loops you already have.**
+
+A Telegram channel posts a BTC signal. Relay shows the live Hyperliquid mark/funding/open interest and your **paper** BTC-PERP position. Hold the ring and say **“de-risk 25”** (or tap), confirm on the glasses, and the paper position is reduced — liquidation distance moves away. No exchange keys. No real funds. No order leaves the device.
+
+| Markets | Confirm | Risk cut |
+|---|---|---|
+| <img src="docs/market.png" width="300"> | <img src="docs/market-confirm.png" width="300"> | <img src="docs/market-done.png" width="300"> |
+
+This is a genuine cross-track flow: Telegram (channel signal) + Hyperliquid (live public market context + paper order). That is why Relay enters **Crypto & DeFi** as a second track without becoming a different product.
+
+We chose Crypto & DeFi over Exchanges & Stocks deliberately: Hyperliquid's public read path and paper positions need **no API keys or custody**, and the “signal → risk → confirm” flow matches Relay's attention thesis. A Binance/OKX terminal would be a different app and a much more crowded trading-terminal category.
 
 ---
 
@@ -238,6 +265,8 @@ The server receives raw **16 kHz signed 16-bit mono PCM** from the glasses mic, 
 | `POST` | `/api/loop/:id/vip` | Promote a sender in the ranking |
 | `POST` | `/api/loop/:id/mute` | Drop a thread from the brief |
 | `GET` | `/api/digest` | Channel headlines, no interruptions |
+| `GET` | `/api/market` | Live Hyperliquid context + paper position |
+| `POST` | `/api/market/de-risk` | Reduce/close the paper position; confirm-only |
 | `GET` | `/api/stats` | Cleared loops, sensitive clears, open→send latency |
 | `POST` | `/api/session/revoke` | Disconnect Telegram, delete the session, restore demo |
 | `POST` | `/api/transcribe` | PCM → text (or explicit demo utterance) |
@@ -258,7 +287,7 @@ Auth is `Authorization: Bearer <device token>`; only the SHA-256 hash is stored.
 ## Safety and privacy
 
 - **No default commitments.** Clear/possible/sensitive classification (above); sensitive and hedged asks get a neutral holding reply and a review step. The user's spoken uncertainty is preserved. There is no auto-send.
-- **No money, no trading, no financial advice.** The demo data is fictional.
+- **No real money, no exchange keys, no orders.** The Hyperliquid surface is read-only public data + a **PAPER** position; de-risk is a local paper action with an explicit confirm. No financial advice. Demo data is fictional.
 - **No secrets in the client.** The `.ehpk` contains no keys; all provider calls are server-side.
 - **Explicit consent.** The phone pairing page requires a checkbox acknowledging that Relay reads recent chats and sends only approved replies.
 - **Revocation on the glasses.** On the connected pair screen, **hold to revoke**: the Telegram session is disconnected and deleted, and the fictional demo is restored. `DELETE /api/account` removes everything; `GET /api/export` exports it.
@@ -304,6 +333,7 @@ The suite covers:
 ```
 PASS · full journey
   brief lit=6280 · detail lit=5644 · draft lit=3467 · sent lit=3449
+  market leg: RELAY MARKET → RELAY DERISK 25
   pair code issued · screenshots in docs/
 ```
 
@@ -315,7 +345,7 @@ Everything in this repository was written on **Nov 23–24, 2026**, except the p
 
 Pre-existing: Even Hub SDK `0.0.16`, CLI `0.2.0`, simulator `0.9.5`; the minimal template pattern; Vite, Express, GramJS, Telegram/OpenAI APIs.
 
-Built: the product thesis, all 8 screens, the ranking/extraction/drafting domain, the backend, pairing, the Telegram MTProto/Bot API/LLM/STT adapters, the demo seed, the offline fallback, the tests, the E2E harness, the live bot proof, the screenshots, the 50-second demo video, and the packaged `.ehpk`.
+Built: the product thesis, the twelve screens, the ranking/extraction/drafting domain, the backend, pairing, the Telegram MTProto/Bot API/LLM/STT/Hyperliquid adapters, the paper-position layer, the demo seed, the offline fallback, the tests, the E2E harness, the live bot proof, the screenshots, the demo video, and the packaged `.ehpk`.
 
 ---
 
@@ -357,6 +387,7 @@ PITCH.md             3-minute pitch and Q&A
 
 - **MTProto DM live login** is pending an accessible app session/code. Telegram returns `SentCodeTypeApp` with no SMS fallback for the test number; the adapter is mocked-tested. To force SMS, log out every Telegram app session for the number (or use a second number with no active app); checklist: `docs/LIVE_TELEGRAM.md`. **Bot API mode is live-verified** for bot/community inboxes (not personal DMs).
 - **Per-chat read allowlist:** mute and VIP are implemented, but Relay still snapshots the 12 most recent dialogs rather than asking per chat.
+- **Paper market mode:** Hyperliquid context is live/read-only, but de-risk is a local paper action. Real execution would need a testnet API wallet, confirmation, and more custody/security work — deliberately out of scope.
 - **Physical G2/beta test:** not run here (no hardware). The simulator is accepted for submission; the offline `.ehpk` fallback and `docs/HARDWARE_TEST.md` cover the first hardware pass.
 - Simulator ≠ hardware: font, greyscale and image pacing need a G2 check.
 - Android may suspend the WebView; the app persists its token and re-derives the brief on relaunch, but it has not been beta-tested on a physical phone yet.
