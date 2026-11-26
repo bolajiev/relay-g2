@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/bolajiev/relay-g2/actions/workflows/ci.yml/badge.svg)](https://github.com/bolajiev/relay-g2/actions/workflows/ci.yml)
 
-[Watch the 66-second demo](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4) · [Pairing page screenshot](docs/pair-page.png) · [Packaged build](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay.ehpk) · [Source](https://github.com/bolajiev/relay-g2)
+[Team one-pager](TEAM.md) · [Watch the 66-second demo](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4) · [Pairing page screenshot](docs/pair-page.png) · [Packaged build](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay.ehpk) · [Source](https://github.com/bolajiev/relay-g2)
 
 <a href="https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4">
   <img src="docs/relay-demo.gif" alt="Relay 66-second demo: Telegram reply loop and Hyperliquid paper de-risk">
