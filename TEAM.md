@@ -3,14 +3,14 @@
 **One line:** Relay is a decision layer for Even G2 — **people waiting on Telegram, positions at risk on Hyperliquid.** Read, speak, confirm.
 
 **Repo:** https://github.com/bolajiev/relay-g2  
-**Demo (66s, captioned):** https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4  
+**Demo (66s, voice-over + captions):** https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4  
 **Deadline:** Nov 29, 19:59 UTC · **3 days left** (as of Nov 26)
 
 <a href="https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4">
   <img src="docs/relay-demo.gif" alt="Relay 66-second demo">
 </a>
 
-*Click the preview for the MP4 with controls.*
+*The inline GIF is silent; click it for the MP4 with voice-over and controls.*
 
 ---
 
