@@ -6,7 +6,11 @@
 
 [Watch the 66-second demo](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4) · [Pairing page screenshot](docs/pair-page.png) · [Packaged build](https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay.ehpk) · [Source](https://github.com/bolajiev/relay-g2)
 
-<img src="docs/relay-demo-poster.png" alt="Relay drafting a reply on Even G2" width="900">
+<a href="https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4">
+  <img src="docs/relay-demo.gif" alt="Relay 66-second demo: Telegram reply loop and Hyperliquid paper de-risk">
+</a>
+
+*66-second demo, captioned. Click the preview for the MP4 with controls.*
 
 ---
 
