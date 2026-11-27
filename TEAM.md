@@ -4,7 +4,7 @@
 
 **Repo:** https://github.com/bolajiev/relay-g2  
 **Demo (66s, voice-over + captions):** https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4  
-**Deadline:** Nov 29, 19:59 UTC · **3 days left** (as of Nov 26)
+**Deadline:** Nov 29, 19:59 UTC · **2 days left** (as of Nov 27)
 
 <a href="https://github.com/bolajiev/relay-g2/releases/download/v0.1.0/relay-demo.mp4">
   <img src="docs/relay-demo.gif" alt="Relay 66-second demo">
@@ -60,7 +60,7 @@ The rules allow up to **2 tracks** when one app genuinely connects apps from bot
 ## Submit — 3 steps (team lead)
 
 1. Open **https://dorahacks.io/hackathon/even-realities/detail** → **Submit Build**.
-2. Use the private submission copy; select **01 Messaging & News** primary + **02 Crypto & DeFi** second; add **Best Telegram integration**.
+2. Use the submission copy from the team lead; select **01 Messaging & News** primary + **02 Crypto & DeFi** second; add **Best Telegram integration**.
 3. If the form requires a video URL, use the release MP4 link above (or upload it to YouTube/Loom if it insists on a player).
 
 **Do not** create a second repo/project; that splits the production-readiness score.
