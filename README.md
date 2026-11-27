@@ -168,7 +168,7 @@ PUBLIC_URL=http://localhost:8787
 |---|---|---|
 | <img src="docs/live-bot-brief.png" width="300"> | <img src="docs/live-bot-sent.png" width="300"> | <img src="docs/live-bot-revoked.png" width="300"> |
 
-The bot saw `/start` + *“Can you send me the deck by 5?”*; Relay synced 1 thread / 2 messages, rendered `BJ — Send deck by 5`, sent **“Yes — I'll send it by 5.”** through `sendMessage` (`RELAY SENT BJ remaining=0`), then **Disconnect Telegram** removed the stored token (`botTokenEnc` 1 → 0) and restored the demo. Full log: `docs/LIVE_TELEGRAM.md`.
+The bot saw `/start` + *“Can you send me the deck by 5?”*; Relay synced 1 thread / 2 messages, rendered `BJ — Send deck by 5`, sent **“Yes — I'll send it by 5.”** through `sendMessage` (`RELAY SENT BJ remaining=0`), then **Disconnect Telegram** removed the stored token (`botTokenEnc` 1 → 0) and restored the demo.
 
 ### Hardware readiness
 
@@ -178,9 +178,8 @@ needed. The packaged `.ehpk` also runs without a backend: it falls back to
 
 <img src="docs/offline-demo.png" alt="Relay offline demo on the glasses" width="360">
 
-If you have a G2, use `docs/HARDWARE_TEST.md` for the install, gesture, lock/relaunch,
-microphone, and beta checklist. It includes the offline smoke test and the
-LAN-backed live build (`VITE_API_URL=...`, whitelist, repack).
+If you have a G2, the first pass is the offline smoke test plus the LAN-backed live
+build (`VITE_API_URL=...`, whitelist, repack).
 
 ### Bot mode (live Bot API, no phone code)
 
@@ -330,7 +329,7 @@ The suite covers:
 - every screen's container contract, canvas bounds, overlaps, text fit, capture count, and the **CHECK/MAYBE review gates** (`app/test/views.test.ts`)
 - the LLM and STT adapters against fake OpenAI-compatible servers, including WAV upload and response cleaning (`server/test/adapters.test.ts`)
 - the **Telegram MTProto adapter** against a fake GramJS client: login, snapshot mapping, send, and 2FA without re-sending the code (`server/test/telegram.test.ts`)
-- the **Telegram Bot API adapter** against a fake Bot API server: update mapping, private-chat loop extraction, send, pairing, and revoke (`server/test/bot.test.ts`, `server/test/api.test.ts`). Live MTProto DMs still need an accessible app code — see `docs/LIVE_TELEGRAM.md`.
+- the **Telegram Bot API adapter** against a fake Bot API server: update mapping, private-chat loop extraction, send, pairing, and revoke (`server/test/bot.test.ts`, `server/test/api.test.ts`). Live MTProto DMs still need an accessible app code.
 
 `npm run test:e2e` boots the backend, preview, and simulator, then drives tap → detail → long-press → release → draft → send → digest → pair, plus a **sensitive-loop gate**: tapping the budget ask must open review and must **not** emit a send. It asserts app log markers, non-blank framebuffers, distinct screen hashes, and **no console errors**. Latest run:
 
@@ -382,17 +381,14 @@ server/              Express backend
 shared/              types, extraction/ranking/drafts, demo seed
 tools/               simulator + server orchestration, E2E, video
 docs/                framebuffer screenshots + demo video
-RESEARCH.md          hackathon analysis, idea scoring, product rationale
-SUBMISSION.md        DoraHacks copy + checklist
-PITCH.md             3-minute pitch and Q&A
 ```
 
 ## Limitations / next
 
-- **MTProto DM live login** is pending an accessible app session/code. Telegram returns `SentCodeTypeApp` with no SMS fallback for the test number; the adapter is mocked-tested. To force SMS, log out every Telegram app session for the number (or use a second number with no active app); checklist: `docs/LIVE_TELEGRAM.md`. **Bot API mode is live-verified** for bot/community inboxes (not personal DMs).
+- **MTProto DM live login** is pending an accessible app session/code. Telegram returns `SentCodeTypeApp` with no SMS fallback for the test number; the adapter is mocked-tested. To force SMS, log out every Telegram app session for the number (or use a second number with no active app). **Bot API mode is live-verified** for bot/community inboxes (not personal DMs).
 - **Per-chat read allowlist:** mute and VIP are implemented, but Relay still snapshots the 12 most recent dialogs rather than asking per chat.
 - **Paper market mode:** Hyperliquid context is live/read-only, but de-risk is a local paper action. Real execution would need a testnet API wallet, confirmation, and more custody/security work — deliberately out of scope.
-- **Physical G2/beta test:** not run here (no hardware). The simulator is accepted for submission; the offline `.ehpk` fallback and `docs/HARDWARE_TEST.md` cover the first hardware pass.
+- **Physical G2/beta test:** not run here (no hardware). The simulator is accepted for submission; the offline `.ehpk` fallback covers the first hardware pass.
 - Simulator ≠ hardware: font, greyscale and image pacing need a G2 check.
 - Android may suspend the WebView; the app persists its token and re-derives the brief on relaunch, but it has not been beta-tested on a physical phone yet.
 - Telegram entity resolution scans up to 100 dialogs on send; a production build should cache access hashes.

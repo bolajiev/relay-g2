@@ -5,7 +5,11 @@ import { StringSession } from 'telegram/sessions/index.js'
 
 const apiId = Number(process.env.TG_API_ID ?? 0)
 const apiHash = process.env.TG_API_HASH ?? ''
-const phone = process.env.TG_DIAG_PHONE ?? '<redacted-phone>'
+const phone = process.env.TG_DIAG_PHONE
+if (!apiId || !apiHash || !phone) {
+  console.error('Set TG_API_ID, TG_API_HASH and TG_DIAG_PHONE in .env first.')
+  process.exit(1)
+}
 
 async function main(): Promise<void> {
   const client = new TelegramClient(new StringSession(''), apiId, apiHash, {
